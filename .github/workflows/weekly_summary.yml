@@ -74,14 +74,14 @@ jobs:
           TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0' | xargs printf "%.1f")
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
 
-          SUMMARY=$(cat <<'TEXT'
+          SUMMARY=$(cat <<'EOF'
 📅 Weekly Trading Summary : $PRETTY_RANGE
 📈 Weekly P&L : \$$WEEK_PL
 💼 Number of Closed Trades : $WEEK_COUNT
 🏆 Best Trade of the Week : $TOP_WIN
 💰 Cumulative P&L : \$$TOTAL_PL
 📊 Cumulative Closed Trades : $TOTAL_COUNT
-TEXT
+EOF
 )
 
           echo "summary<<EOF" >> $GITHUB_OUTPUT
