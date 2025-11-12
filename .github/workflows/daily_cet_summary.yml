@@ -36,43 +36,40 @@ jobs:
           # Basic sanity
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid response from Base44"; cat tmp/trades.json; exit 1; }
 
-      - name: Build daily metrics & lists
+           - name: Build daily metrics & lists
         id: build
         run: |
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Filter CLOSED TODAY
-          CLOSED_JSON=$(jq --arg d "$TODAY" '.items
-            | map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date|tostring|startswith($d))))
-          ' tmp/trades.json)
+          # Filter CLOSED TODAY (if items array exists)
+          CLOSED_JSON=$(jq --arg d "$TODAY" '.items // [] | map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date|tostring|startswith($d))))' tmp/trades.json)
 
           # Sum P&L on closed today (assumes field name profit_loss)
           DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
 
-          # Make a short list of closed lines (ticker type @ strike x qty, P/L)
+          # Make a short list of closed lines
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
-            .[] | "\(.ticker // "N/A") \(.type // "") @ \(.strike_price // "–")  (\(.quantity // 1)x)  P/L: \(.profit_loss // 0)"
+            .[] | "\(.ticker // "N/A") \(.type // "") @ \(.strike_price // "–") (\(.quantity // 1)x) P/L: \(.profit_loss // 0)"
           ' | head -n 12)
 
-          # Filter OPEN positions
-          OPEN_JSON=$(jq '.items | map(select((.status|tostring|ascii_upcase) == "OPEN"))' tmp/trades.json)
+          # Filter OPEN positions (if items array exists)
+          OPEN_JSON=$(jq '.items // [] | map(select((.status|tostring|ascii_upcase) == "OPEN"))' tmp/trades.json)
 
-          # Build open lines: ticker type, strike, expiry, open price
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
             .[] | "\(.ticker // "N/A") \(.type // "")  Strike: \(.strike_price // "–")  Exp: \(.expiration_date // "–")  OpenPx: \(.open_price // "–")"
           ' | head -n 15)
 
-          # Fallback strings if empty
+          # Fallbacks
           if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades today)"; fi
           if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no open positions)"; fi
 
-          # Escape for JSON (newlines -> \n)
           CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
 
           echo "daily_pl=$DAILY_PL" >> $GITHUB_OUTPUT
           echo "closed_list=$CLOSED_ESCAPED" >> $GITHUB_OUTPUT
           echo "open_list=$OPEN_ESCAPED" >> $GITHUB_OUTPUT
+
 
       - name: Send Discord message
         env:
