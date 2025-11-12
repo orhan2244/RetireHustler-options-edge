@@ -34,14 +34,14 @@ jobs:
 
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid Base44 response"; cat tmp/trades.json; exit 1; }
 
-            - name: Build weekly and cumulative metrics
+      - name: Build weekly and cumulative metrics
         id: build
         run: |
           set -euo pipefail
-          WEEK_START='${{ steps.dates.outputs.week_start }}'  # e.g., 2025-11-10
-          TODAY='${{ steps.dates.outputs.today }}'            # e.g., 2025-11-12
+          WEEK_START='${{ steps.dates.outputs.week_start }}'
+          TODAY='${{ steps.dates.outputs.today }}'
 
-          # Normalize: ensure items array exists, upper-case status, and slice close_date to YYYY-MM-DD
+          # Normalize trade data
           NORM=$(jq '
             .items // [] |
             map({
@@ -83,7 +83,6 @@ PY
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
           echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
           echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
-
 
       - name: Send Weekly Summary to Discord
         env:
