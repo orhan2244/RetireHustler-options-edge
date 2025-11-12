@@ -21,8 +21,10 @@ jobs:
         run: |
           TODAY=$(date +"%Y-%m-%d")
           WEEK_START=$(date -d "last monday" +"%Y-%m-%d")
+          PRETTY_RANGE="$(date -d "$WEEK_START" '+%d %B') - $(date -d "$TODAY" '+%d %B')"
           echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "week_start=$WEEK_START" >> $GITHUB_OUTPUT
+          echo "pretty_range=$PRETTY_RANGE" >> $GITHUB_OUTPUT
 
       - name: Fetch all trades from Base44
         id: fetch
@@ -32,7 +34,6 @@ jobs:
             "https://app.base44.com/api/apps/690f1138ddf92f0588990e04/entities/Trade" \
             -o tmp/trades.json
 
-          # Quick sanity check
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
             echo "Invalid Base44 response:"
             cat tmp/trades.json
@@ -45,8 +46,8 @@ jobs:
           set -euo pipefail
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
+          PRETTY_RANGE='${{ steps.dates.outputs.pretty_range }}'
 
-          # Detect array vs. object
           if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
             ITEMS=$(cat tmp/trades.json)
           else
@@ -66,20 +67,19 @@ jobs:
           WEEK_JSON=$(echo "$NORM" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
             map(select(.status == "CLOSED" and .close_date >= $s and .close_date <= $e))
           ')
-          WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0')
+          WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0' | xargs printf "%.1f")
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
 
-          TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'if length>0 then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss)" else "N/A" end')
-          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'if length>0 then min_by(.profit_loss) | "\(.ticker) \(.profit_loss)" else "N/A" end')
+          TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'if length>0 then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss|tonumber|round|tostring)" else "N/A" end')
+          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'if length>0 then min_by(.profit_loss) | "\(.ticker) \(.profit_loss|tonumber|round|tostring)" else "N/A" end')
 
-          TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0')
+          TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0' | xargs printf "%.1f")
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
 
-          # Format with emojis and cleaner spacing
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
-            SUMMARY="📆 **Weekly Summary**\n━━━━━━━━━━━━━━━\n📈 **Weekly P&L:** $WEEK_PL USD\n💼 **Closed Trades:** $WEEK_COUNT\n🏆 **Best Trade:** $TOP_WIN\n💀 **Worst Trade:** $TOP_LOSS\n\n💰 **Cumulative P&L:** $TOTAL_PL USD\n📊 **Total Closed Trades:** $TOTAL_COUNT"
+            SUMMARY="📅 **Weekly Summary – $PRETTY_RANGE**\n\n📈 **Weekly P&L:** \$$WEEK_PL\n💼 **Number of Closed Trades:** $WEEK_COUNT\n🏆 **Best Trade of the Week:** $TOP_WIN\n💀 **Worst Trade:** $TOP_LOSS\n💰 **Cumulative P&L:** \$$TOTAL_PL\n📊 **Cumulative Closed Trades:** $TOTAL_COUNT"
           fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
@@ -98,11 +98,11 @@ jobs:
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
-              "title": "🗓️ Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
+              "title": "📊 Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
               "color": 5814783,
               "fields": [
-                { "name": "📊 Weekly P&L", "value": "**$WEEK_PL USD**", "inline": true },
-                { "name": "💰 Cumulative P&L", "value": "**$TOTAL_PL USD**", "inline": true },
+                { "name": "📈 Weekly P&L", "value": "\$$WEEK_PL", "inline": true },
+                { "name": "💰 Cumulative P&L", "value": "\$$TOTAL_PL", "inline": true },
                 { "name": "🧾 Summary", "value": $SUMMARY }
               ],
               "footer": { "text": "RetireHustler Options Edge • $(date +'%H:%M %Z')" },
@@ -111,4 +111,5 @@ jobs:
           }
           EOF
           )
+
           curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
