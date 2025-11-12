@@ -109,7 +109,7 @@ jobs:
               "title": "📊 Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
               "color": 5814783,
               "fields": [
-                { "value": $SUMMARY }
+                { "name": "🧾 Summary", "value": $SUMMARY }
               ],
               "footer": { "text": "RetireHustler Options Edge • $(date +'%H:%M %Z')" },
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
