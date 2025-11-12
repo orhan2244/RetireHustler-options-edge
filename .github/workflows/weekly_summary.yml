@@ -2,7 +2,8 @@ name: Weekly Trading Summary to Discord
 
 on:
   schedule:
-    - cron: '0 21 * * 5' # Every Friday 22:00 CET (21:00 UTC)
+    # Every Friday 22:00 CET (21:00 UTC)
+    - cron: '0 21 * * 5'
   workflow_dispatch: {}
 
 jobs:
@@ -70,6 +71,7 @@ jobs:
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
 
           TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'if length>0 then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss|tonumber|round|tostring)" else "N/A" end')
+          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'if length>0 then min_by(.profit_loss) | "\(.ticker) \(.profit_loss|tonumber|round|tostring)" else "N/A" end')
 
           TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0' | xargs printf "%.1f")
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
@@ -77,12 +79,7 @@ jobs:
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
-            SUMMARY="📅 Weekly Trading Summary : $PRETTY_RANGE
-📈 Weekly P&L : \$$WEEK_PL
-💼 Number of Closed Trades : $WEEK_COUNT
-🏆 Best Trade of the Week : $TOP_WIN
-💰 Cumulative P&L : \$$TOTAL_PL
-📊 Cumulative Closed Trades : $TOTAL_COUNT"
+            SUMMARY="📅 **Weekly Summary – $PRETTY_RANGE**\n\n📈 **Weekly P&L:** \$$WEEK_PL\n💼 **Number of Closed Trades:** $WEEK_COUNT\n🏆 **Best Trade of the Week:** $TOP_WIN\n💀 **Worst Trade:** $TOP_LOSS\n💰 **Cumulative P&L:** \$$TOTAL_PL\n📊 **Cumulative Closed Trades:** $TOTAL_COUNT"
           fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
