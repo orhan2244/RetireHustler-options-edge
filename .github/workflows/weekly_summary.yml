@@ -86,28 +86,33 @@ jobs:
           echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
           echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
 
-      - name: Send Weekly Summary to Discord
+            - name: Send Weekly Summary to Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
         run: |
-          SUMMARY='${{ steps.build.outputs.summary }}'
-          WEEK_PL='${{ steps.build.outputs.week_pl }}'
-          TOTAL_PL='${{ steps.build.outputs.total_pl }}'
+          SUMMARY_RAW='${{ steps.build.outputs.summary }}'
+          WEEK_PL=$(printf "%.2f" "${{ steps.build.outputs.week_pl }}")
+          TOTAL_PL=$(printf "%.2f" "${{ steps.build.outputs.total_pl }}")
+
+          # Format Summary: replace \n with real line breaks
+          SUMMARY=$(echo "$SUMMARY_RAW" | sed 's/\\n/\n/g')
 
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
               "title": "📆 Weekly Trading Recap – Week Ending $(date +%b\ %d, %Y)",
-              "color": 15844367,
+              "color": 5814783,
               "fields": [
-                { "name": "Weekly P&L", "value": "\`$WEEK_PL\`", "inline": true },
-                { "name": "Cumulative P&L", "value": "\`$TOTAL_PL\`", "inline": true },
-                { "name": "Summary", "value": $SUMMARY }
+                { "name": "📈 Weekly P&L", "value": "**💵 $WEEK_PL USD**", "inline": true },
+                { "name": "💰 Cumulative P&L", "value": "**$TOTAL_PL USD**", "inline": true },
+                { "name": "🧾 Summary", "value": "$SUMMARY" }
               ],
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-              "footer": { "text": "RetireHustler Options Edge" }
+              "footer": { "text": "RetireHustler Options Edge  •  $(date +'%H:%M %Z')" },
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
             }]
           }
           EOF
           )
-          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
+
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null
+
