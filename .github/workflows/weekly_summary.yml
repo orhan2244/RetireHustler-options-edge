@@ -24,20 +24,20 @@ jobs:
           echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "week_start=$WEEK_START" >> $GITHUB_OUTPUT
 
-            - name: Fetch all trades from Base44
+      - name: Fetch all trades from Base44
         id: fetch
         run: |
           mkdir -p tmp
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/690f1138ddf92f0588990e04/entities/Trade" > tmp/trades.json
+            "https://app.base44.com/api/apps/690f1138ddf92f0588990e04/entities/Trade" \
+            -o tmp/trades.json
 
-          # Check if file is a valid JSON array and not empty
-          if ! jq -e 'type == "array" and length > 0' tmp/trades.json > /dev/null; then
+          # Check if file is a valid JSON object (has 'items') or array
+          if ! jq -e 'type=="object" or type=="array"' tmp/trades.json > /dev/null; then
             echo "Invalid Base44 response"
             cat tmp/trades.json
             exit 1
           fi
-
 
       - name: Build weekly and cumulative metrics
         id: build
@@ -46,8 +46,10 @@ jobs:
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Normalize fields
-          NORM=$(jq '
+          # Handle both array or object{items:[...]} formats
+          ITEMS=$(jq -c '.items // .' tmp/trades.json)
+
+          NORM=$(echo "$ITEMS" | jq '
             map({
               ticker,
               type,
@@ -55,19 +57,17 @@ jobs:
               close_date: ((.close_date // "" | tostring) | .[0:10]),
               profit_loss: (.profit_loss // 0)
             })
-          ' tmp/trades.json)
+          ')
 
-          # Weekly closed trades between WEEK_START and TODAY (inclusive)
           WEEK_JSON=$(echo "$NORM" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
             map(select(.status == "CLOSED" and .close_date >= $s and .close_date <= $e))
           ')
-
           WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0')
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
+
           TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'select(length>0) | max_by(.profit_loss) | "\(.ticker) +\(.profit_loss)"' 2>/dev/null || echo "N/A")
           TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'select(length>0) | min_by(.profit_loss) | "\(.ticker) \(.profit_loss)"' 2>/dev/null || echo "N/A")
 
-          # All closed trades (cumulative)
           TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0')
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
 
