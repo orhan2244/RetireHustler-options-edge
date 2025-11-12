@@ -109,4 +109,5 @@ jobs:
           }
           EOF
           )
+
           curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
