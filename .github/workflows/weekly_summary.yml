@@ -29,35 +29,44 @@ jobs:
         run: |
           mkdir -p tmp
           curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
-            "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
+            "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=2000" \
             -o tmp/trades.json
+
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid Base44 response"; cat tmp/trades.json; exit 1; }
 
-      - name: Build weekly metrics
+      - name: Build weekly and cumulative metrics
         id: build
         run: |
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
 
+          # Weekly trades (Mon–Fri)
           WEEK_JSON=$(jq --arg s "$WEEK_START" --arg e "$TODAY" '
             .items // [] |
             map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date >= $s and .close_date <= $e)))
           ' tmp/trades.json)
 
-          TOTAL_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss // 0] | add // 0')
-          TRADE_COUNT=$(echo "$WEEK_JSON" | jq 'length')
+          WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+          WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
 
           TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'max_by(.profit_loss // 0) | "\(.ticker) +\(.profit_loss)"' 2>/dev/null || echo "N/A")
           TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'min_by(.profit_loss // 0) | "\(.ticker) \(.profit_loss)"' 2>/dev/null || echo "N/A")
 
-          if [ -z "$TRADE_COUNT" ] || [ "$TRADE_COUNT" -eq 0 ]; then
+          # Cumulative all-time stats
+          ALL_JSON=$(jq '.items // [] | map(select((.status|tostring|ascii_upcase) == "CLOSED"))' tmp/trades.json)
+          TOTAL_PL=$(echo "$ALL_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+          TOTAL_COUNT=$(echo "$ALL_JSON" | jq 'length')
+
+          # Build report summary
+          if [ -z "$WEEK_COUNT" ] || [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
-            SUMMARY="Weekly P&L: $TOTAL_PL USD\nClosed trades: $TRADE_COUNT\nBest: $TOP_WIN\nWorst: $TOP_LOSS"
+            SUMMARY="📅 Weekly: $WEEK_PL USD\n💼 Trades closed: $WEEK_COUNT\n🏆 Best: $TOP_WIN\n💀 Worst: $TOP_LOSS\n\n💰 Cumulative P&L: $TOTAL_PL USD (Total $TOTAL_COUNT trades)"
           fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
+          echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
           echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
 
       - name: Send Weekly Summary to Discord
@@ -65,15 +74,17 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
         run: |
           SUMMARY='${{ steps.build.outputs.summary }}'
-          PL='${{ steps.build.outputs.total_pl }}'
+          WEEK_PL='${{ steps.build.outputs.week_pl }}'
+          TOTAL_PL='${{ steps.build.outputs.total_pl }}'
 
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
-              "title": "📅 Weekly Trading Recap – Week Ending $(date +%b\ %d, %Y)",
+              "title": "📆 Weekly Trading Recap – Week Ending $(date +%b\ %d, %Y)",
               "color": 15844367,
               "fields": [
-                { "name": "Total Weekly P&L", "value": "\`$PL\`", "inline": true },
+                { "name": "Weekly P&L", "value": "\`$WEEK_PL\`", "inline": true },
+                { "name": "Cumulative P&L", "value": "\`$TOTAL_PL\`", "inline": true },
                 { "name": "Summary", "value": $SUMMARY }
               ],
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
