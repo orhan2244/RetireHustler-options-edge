@@ -1,0 +1,86 @@
+name: Weekly Trading Summary to Discord
+
+on:
+  schedule:
+    # Every Friday 22:00 CET (21:00 UTC)
+    - cron: '0 21 * * 5'
+  workflow_dispatch: {}
+
+jobs:
+  weekly-summary:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Prague
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get current date
+        id: dates
+        run: |
+          TODAY=$(date +"%Y-%m-%d")
+          WEEK_START=$(date -d "last monday" +"%Y-%m-%d")
+          echo "today=$TODAY" >> $GITHUB_OUTPUT
+          echo "week_start=$WEEK_START" >> $GITHUB_OUTPUT
+
+      - name: Fetch all trades from Base44
+        id: fetch
+        run: |
+          mkdir -p tmp
+          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+            "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
+            -o tmp/trades.json
+          jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid Base44 response"; cat tmp/trades.json; exit 1; }
+
+      - name: Build weekly metrics
+        id: build
+        run: |
+          WEEK_START='${{ steps.dates.outputs.week_start }}'
+          TODAY='${{ steps.dates.outputs.today }}'
+
+          WEEK_JSON=$(jq --arg s "$WEEK_START" --arg e "$TODAY" '
+            .items // [] |
+            map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date >= $s and .close_date <= $e)))
+          ' tmp/trades.json)
+
+          TOTAL_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+          TRADE_COUNT=$(echo "$WEEK_JSON" | jq 'length')
+
+          TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'max_by(.profit_loss // 0) | "\(.ticker) +\(.profit_loss)"' 2>/dev/null || echo "N/A")
+          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'min_by(.profit_loss // 0) | "\(.ticker) \(.profit_loss)"' 2>/dev/null || echo "N/A")
+
+          if [ -z "$TRADE_COUNT" ] || [ "$TRADE_COUNT" -eq 0 ]; then
+            SUMMARY="No closed trades this week 💤"
+          else
+            SUMMARY="Weekly P&L: $TOTAL_PL USD\nClosed trades: $TRADE_COUNT\nBest: $TOP_WIN\nWorst: $TOP_LOSS"
+          fi
+
+          ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+          echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
+          echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
+
+      - name: Send Weekly Summary to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
+        run: |
+          SUMMARY='${{ steps.build.outputs.summary }}'
+          PL='${{ steps.build.outputs.total_pl }}'
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "📅 Weekly Trading Recap – Week Ending $(date +%b\ %d, %Y)",
+              "color": 15844367,
+              "fields": [
+                { "name": "Total Weekly P&L", "value": "\`$PL\`", "inline": true },
+                { "name": "Summary", "value": $SUMMARY }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+              "footer": { "text": "RetireHustler Options Edge" }
+            }]
+          }
+          EOF
+          )
+
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
