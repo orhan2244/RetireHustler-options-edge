@@ -76,7 +76,7 @@ jobs:
 
       - name: Send Discord message
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
         run: |
           PRETTY='${{ steps.dates.outputs.pretty }}'
           PL='${{ steps.build.outputs.daily_pl }}'
