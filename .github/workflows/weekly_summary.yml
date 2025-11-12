@@ -80,7 +80,7 @@ jobs:
           SUMMARY="No closed trades this week 💤"
           else
           SUMMARY=$(cat <<EOF
-          📅 Weekly Trading Summary : $PRETTY_RANGE
+          📅 $PRETTY_RANGE
           📈 Weekly P&L : \$$WEEK_PL
           💼 Number of Closed Trades : $WEEK_COUNT
           🏆 Best Trade of the Week : $TOP_WIN
@@ -109,7 +109,7 @@ jobs:
               "title": "📊 Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
               "color": 5814783,
               "fields": [
-                { "name": "🧾 Summary", "value": $SUMMARY }
+                { "value": $SUMMARY }
               ],
               "footer": { "text": "RetireHustler Options Edge • $(date +'%H:%M %Z')" },
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
