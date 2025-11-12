@@ -32,21 +32,21 @@ jobs:
             "https://app.base44.com/api/apps/690f1138ddf92f0588990e04/entities/Trade" \
             -o tmp/trades.json
 
-          # Check if file is a valid JSON object (has 'items') or array
-          if ! jq -e 'type=="object" or type=="array"' tmp/trades.json > /dev/null; then
-            echo "Invalid Base44 response"
+          # Quick sanity check
+          if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
+            echo "Invalid Base44 response:"
             cat tmp/trades.json
             exit 1
           fi
 
-            - name: Build weekly and cumulative metrics
+      - name: Build weekly and cumulative metrics
         id: build
         run: |
           set -euo pipefail
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Detect whether the data is an array or has an "items" field
+          # Detect array vs. object
           if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
             ITEMS=$(cat tmp/trades.json)
           else
@@ -69,8 +69,8 @@ jobs:
           WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0')
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
 
-          TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'select(length>0) | max_by(.profit_loss) | "\(.ticker) +\(.profit_loss)"' 2>/dev/null || echo "N/A")
-          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'select(length>0) | min_by(.profit_loss) | "\(.ticker) \(.profit_loss)"' 2>/dev/null || echo "N/A")
+          TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'if length>0 then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss)" else "N/A" end')
+          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'if length>0 then min_by(.profit_loss) | "\(.ticker) \(.profit_loss)" else "N/A" end')
 
           TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0')
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
@@ -85,7 +85,6 @@ jobs:
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
           echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
           echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
-
 
       - name: Send Weekly Summary to Discord
         env:
