@@ -79,12 +79,7 @@ jobs:
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
-            SUMMARY="📅 Weekly Trading Summary : $PRETTY_RANGE
-📈 Weekly P&L : \$$WEEK_PL
-💼 Number of Closed Trades : $WEEK_COUNT
-🏆 Best Trade of the Week : $TOP_WIN
-💰 Cumulative P&L : \$$TOTAL_PL
-📊 Cumulative Closed Trades : $TOTAL_COUNT"
+            SUMMARY="📅 **Weekly Summary – $PRETTY_RANGE**\n\n📈 **Weekly P&L:** \$$WEEK_PL\n💼 **Number of Closed Trades:** $WEEK_COUNT\n🏆 **Best Trade of the Week:** $TOP_WIN\n💀 **Worst Trade:** $TOP_LOSS\n💰 **Cumulative P&L:** \$$TOTAL_PL\n📊 **Cumulative Closed Trades:** $TOTAL_COUNT"
           fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
