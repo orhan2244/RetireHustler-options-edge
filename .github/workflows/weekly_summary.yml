@@ -75,10 +75,11 @@ jobs:
           TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0')
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
 
+          # Format with emojis and cleaner spacing
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
-            SUMMARY="📅 Weekly: $WEEK_PL USD\n💼 Trades closed: $WEEK_COUNT\n🏆 Best: $TOP_WIN\n💀 Worst: $TOP_LOSS\n\n💰 Cumulative P&L: $TOTAL_PL USD (Total $TOTAL_COUNT trades)"
+            SUMMARY="📆 **Weekly Summary**\n━━━━━━━━━━━━━━━\n📈 **Weekly P&L:** $WEEK_PL USD\n💼 **Closed Trades:** $WEEK_COUNT\n🏆 **Best Trade:** $TOP_WIN\n💀 **Worst Trade:** $TOP_LOSS\n\n💰 **Cumulative P&L:** $TOTAL_PL USD\n📊 **Total Closed Trades:** $TOTAL_COUNT"
           fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
@@ -97,15 +98,15 @@ jobs:
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
-              "title": "📆 Weekly Trading Recap – Week Ending $(date +%b\ %d, %Y)",
-              "color": 15844367,
+              "title": "🗓️ Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
+              "color": 5814783,
               "fields": [
-                { "name": "Weekly P&L", "value": "\`$WEEK_PL\`", "inline": true },
-                { "name": "Cumulative P&L", "value": "\`$TOTAL_PL\`", "inline": true },
-                { "name": "Summary", "value": $SUMMARY }
+                { "name": "📊 Weekly P&L", "value": "**$WEEK_PL USD**", "inline": true },
+                { "name": "💰 Cumulative P&L", "value": "**$TOTAL_PL USD**", "inline": true },
+                { "name": "🧾 Summary", "value": $SUMMARY }
               ],
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-              "footer": { "text": "RetireHustler Options Edge" }
+              "footer": { "text": "RetireHustler Options Edge • $(date +'%H:%M %Z')" },
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
             }]
           }
           EOF
