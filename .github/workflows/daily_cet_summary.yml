@@ -36,7 +36,7 @@ jobs:
           # Basic sanity
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid response from Base44"; cat tmp/trades.json; exit 1; }
 
-           - name: Build daily metrics & lists
+      - name: Build daily metrics & lists
         id: build
         run: |
           TODAY='${{ steps.dates.outputs.today }}'
@@ -70,7 +70,6 @@ jobs:
           echo "closed_list=$CLOSED_ESCAPED" >> $GITHUB_OUTPUT
           echo "open_list=$OPEN_ESCAPED" >> $GITHUB_OUTPUT
 
-
       - name: Send Discord message
         env:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
@@ -100,5 +99,5 @@ jobs:
           )
 
           curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
-# test trigger
 
+# test trigger
