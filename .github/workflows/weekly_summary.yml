@@ -34,16 +34,22 @@ jobs:
 
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid Base44 response"; cat tmp/trades.json; exit 1; }
 
-      - name: Build weekly and cumulative metrics
+            - name: Build weekly and cumulative metrics
         id: build
         run: |
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Weekly trades (Mon–Fri)
+          # Normalize and filter weekly closed trades
           WEEK_JSON=$(jq --arg s "$WEEK_START" --arg e "$TODAY" '
             .items // [] |
-            map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date >= $s and .close_date <= $e)))
+            map(
+              .status = ((.status|tostring|ascii_upcase) | gsub(" "; "")) |
+              .close_date = (.close_date | tostring)
+            ) |
+            map(
+              select(.status == "CLOSED" and (.close_date >= $s and .close_date <= ($e + "T23:59:59")))
+            )
           ' tmp/trades.json)
 
           WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss // 0] | add // 0')
@@ -52,13 +58,17 @@ jobs:
           TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'max_by(.profit_loss // 0) | "\(.ticker) +\(.profit_loss)"' 2>/dev/null || echo "N/A")
           TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'min_by(.profit_loss // 0) | "\(.ticker) \(.profit_loss)"' 2>/dev/null || echo "N/A")
 
-          # Cumulative all-time stats
-          ALL_JSON=$(jq '.items // [] | map(select((.status|tostring|ascii_upcase) == "CLOSED"))' tmp/trades.json)
+          # Cumulative (all CLOSED)
+          ALL_JSON=$(jq '
+            .items // [] |
+            map(.status = ((.status|tostring|ascii_upcase) | gsub(" "; ""))) |
+            map(select(.status == "CLOSED"))
+          ' tmp/trades.json)
+
           TOTAL_PL=$(echo "$ALL_JSON" | jq '[.[].profit_loss // 0] | add // 0')
           TOTAL_COUNT=$(echo "$ALL_JSON" | jq 'length')
 
-          # Build report summary
-          if [ -z "$WEEK_COUNT" ] || [ "$WEEK_COUNT" -eq 0 ]; then
+          if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
             SUMMARY="📅 Weekly: $WEEK_PL USD\n💼 Trades closed: $WEEK_COUNT\n🏆 Best: $TOP_WIN\n💀 Worst: $TOP_LOSS\n\n💰 Cumulative P&L: $TOTAL_PL USD (Total $TOTAL_COUNT trades)"
