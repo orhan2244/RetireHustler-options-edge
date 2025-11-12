@@ -1,0 +1,106 @@
+name: Daily CET Trading Summary to Discord
+
+on:
+  schedule:
+    # GitHub cron uses UTC. 22:00 CET = 21:00 UTC, 22:00 CEST = 20:00 UTC.
+    - cron: '0 21 * * 1-5'  # Winter time (CET)
+    - cron: '0 20 * * 1-5'  # Summer time (CEST)
+  workflow_dispatch: {}
+
+jobs:
+  daily-summary:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Prague
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get today's date (CET/CEST)
+        id: dates
+        run: |
+          TODAY=$(date +"%Y-%m-%d")
+          PRETTY=$(date +"%b %d, %Y")
+          echo "today=$TODAY" >> $GITHUB_OUTPUT
+          echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
+
+      - name: Fetch all trades from Base44
+        id: fetch
+        run: |
+          mkdir -p tmp
+          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+            "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
+            -o tmp/trades.json
+
+          # Basic sanity
+          jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid response from Base44"; cat tmp/trades.json; exit 1; }
+
+      - name: Build daily metrics & lists
+        id: build
+        run: |
+          TODAY='${{ steps.dates.outputs.today }}'
+
+          # Filter CLOSED TODAY
+          CLOSED_JSON=$(jq --arg d "$TODAY" '.items
+            | map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date|tostring|startswith($d))))
+          ' tmp/trades.json)
+
+          # Sum P&L on closed today (assumes field name profit_loss)
+          DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+
+          # Make a short list of closed lines (ticker type @ strike x qty, P/L)
+          CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
+            .[] | "\(.ticker // "N/A") \(.type // "") @ \(.strike_price // "–")  (\(.quantity // 1)x)  P/L: \(.profit_loss // 0)"
+          ' | head -n 12)
+
+          # Filter OPEN positions
+          OPEN_JSON=$(jq '.items | map(select((.status|tostring|ascii_upcase) == "OPEN"))' tmp/trades.json)
+
+          # Build open lines: ticker type, strike, expiry, open price
+          OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
+            .[] | "\(.ticker // "N/A") \(.type // "")  Strike: \(.strike_price // "–")  Exp: \(.expiration_date // "–")  OpenPx: \(.open_price // "–")"
+          ' | head -n 15)
+
+          # Fallback strings if empty
+          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades today)"; fi
+          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no open positions)"; fi
+
+          # Escape for JSON (newlines -> \n)
+          CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+          OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+
+          echo "daily_pl=$DAILY_PL" >> $GITHUB_OUTPUT
+          echo "closed_list=$CLOSED_ESCAPED" >> $GITHUB_OUTPUT
+          echo "open_list=$OPEN_ESCAPED" >> $GITHUB_OUTPUT
+
+      - name: Send Discord message
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          PRETTY='${{ steps.dates.outputs.pretty }}'
+          PL='${{ steps.build.outputs.daily_pl }}'
+          CLOSED='${{ steps.build.outputs.closed_list }}'
+          OPEN='${{ steps.build.outputs.open_list }}'
+
+          # Build embed with two sections
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "📊 Daily Trading Summary – $PRETTY (22:00 CET)",
+              "color": 3447003,
+              "fields": [
+                { "name": "Daily P&L", "value": "\`$PL\`", "inline": true },
+                { "name": "Timezone", "value": "Europe/Prague", "inline": true },
+                { "name": "Closed Today", "value": $CLOSED },
+                { "name": "Open Positions", "value": $OPEN }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+              "footer": { "text": "RetireHustler Options Edge" }
+            }]
+          }
+          EOF
+          )
+
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
+
