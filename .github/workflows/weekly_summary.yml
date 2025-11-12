@@ -39,15 +39,19 @@ jobs:
             exit 1
           fi
 
-      - name: Build weekly and cumulative metrics
+            - name: Build weekly and cumulative metrics
         id: build
         run: |
           set -euo pipefail
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Handle both array or object{items:[...]} formats
-          ITEMS=$(jq -c '.items // .' tmp/trades.json)
+          # Detect whether the data is an array or has an "items" field
+          if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
+            ITEMS=$(cat tmp/trades.json)
+          else
+            ITEMS=$(jq -c '.items // []' tmp/trades.json)
+          fi
 
           NORM=$(echo "$ITEMS" | jq '
             map({
@@ -81,6 +85,7 @@ jobs:
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
           echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
           echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
+
 
       - name: Send Weekly Summary to Discord
         env:
