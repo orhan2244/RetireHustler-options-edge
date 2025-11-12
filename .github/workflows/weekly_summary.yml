@@ -34,7 +34,7 @@ jobs:
 
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid Base44 response"; cat tmp/trades.json; exit 1; }
 
-            - name: Build weekly and cumulative metrics
+      - name: Build weekly and cumulative metrics
         id: build
         run: |
           WEEK_START='${{ steps.dates.outputs.week_start }}'
@@ -105,3 +105,5 @@ jobs:
           )
 
           curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
+
+# test trigger
