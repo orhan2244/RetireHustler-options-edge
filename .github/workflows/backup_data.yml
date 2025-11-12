@@ -1,0 +1,61 @@
+name: Backup App Data
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # Runs daily at 01:00 UTC
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Fetch Trade Journal Data
+        run: |
+          mkdir -p data/backups
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H-%M-%S")
+          
+          # Fetch trades data from Base44 API
+          curl -X GET "${{ secrets.BASE44_API_URL }}/entities/Trade" \
+            -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+            -o "data/backups/trades_${TIMESTAMP}.json"
+          
+          echo "✅ Trades backup saved"
+          
+      - name: Fetch Watchlist Data
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H-%M-%S")
+          
+          # Fetch watchlist data from Base44 API
+          curl -X GET "${{ secrets.BASE44_API_URL }}/entities/Watchlist" \
+            -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+            -o "data/backups/watchlist_${TIMESTAMP}.json"
+          
+          echo "✅ Watchlist backup saved"
+          
+      - name: Fetch Earnings Events Data
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d_%H-%M-%S")
+          
+          # Fetch earnings data from Base44 API
+          curl -X GET "${{ secrets.BASE44_API_URL }}/entities/EarningsEvent" \
+            -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+            -o "data/backups/earnings_${TIMESTAMP}.json"
+          
+          echo "✅ Earnings backup saved"
+          
+      - name: Commit and Push Backups
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add data/backups/
+          git commit -m "Automated backup: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" || echo "No changes to commit"
+          git push
