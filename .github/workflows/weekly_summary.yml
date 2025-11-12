@@ -20,7 +20,7 @@ jobs:
         run: |
           TODAY=$(date +"%Y-%m-%d")
           WEEK_START=$(date -d "last monday" +"%Y-%m-%d")
-          PRETTY_RANGE="$(date -d "$WEEK_START" '+%d')–$(date -d "$TODAY" '+%d %B')"
+          PRETTY_RANGE="$(date -d "$WEEK_START" '+%d %B') - $(date -d "$TODAY" '+%d %B')"
           echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "week_start=$WEEK_START" >> $GITHUB_OUTPUT
           echo "pretty_range=$PRETTY_RANGE" >> $GITHUB_OUTPUT
@@ -68,17 +68,22 @@ jobs:
           ')
           WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0' | xargs printf "%.1f")
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
+
           TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'if length>0 then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss|tonumber|round|tostring)" else "N/A" end')
 
           TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0' | xargs printf "%.1f")
           TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
 
-          SUMMARY="📅 Weekly Trading Summary : $PRETTY_RANGE
+          if [ "$WEEK_COUNT" -eq 0 ]; then
+            SUMMARY="No closed trades this week 💤"
+          else
+            SUMMARY="📅 Weekly Trading Summary : $PRETTY_RANGE
 📈 Weekly P&L : \$$WEEK_PL
 💼 Number of Closed Trades : $WEEK_COUNT
 🏆 Best Trade of the Week : $TOP_WIN
 💰 Cumulative P&L : \$$TOTAL_PL
 📊 Cumulative Closed Trades : $TOTAL_COUNT"
+          fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
