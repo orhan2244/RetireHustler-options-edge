@@ -31,7 +31,6 @@ jobs:
           curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
             "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=2000" \
             -o tmp/trades.json
-
           jq 'has("items")' tmp/trades.json >/dev/null || { echo "Invalid Base44 response"; cat tmp/trades.json; exit 1; }
 
       - name: Build weekly and cumulative metrics
@@ -41,7 +40,6 @@ jobs:
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Normalize trade data
           NORM=$(jq '
             .items // [] |
             map({
@@ -53,18 +51,14 @@ jobs:
             })
           ' tmp/trades.json)
 
-          # Weekly closed trades between WEEK_START and TODAY (inclusive)
           WEEK_JSON=$(echo "$NORM" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
             map(select(.status == "CLOSED" and .close_date >= $s and .close_date <= $e))
           ')
-
           WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0')
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
-
           TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'select(length>0) | max_by(.profit_loss) | "\(.ticker) +\(.profit_loss)"' 2>/dev/null || echo "N/A")
           TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'select(length>0) | min_by(.profit_loss) | "\(.ticker) \(.profit_loss)"' 2>/dev/null || echo "N/A")
 
-          # Cumulative: all CLOSED trades
           ALL_JSON=$(echo "$NORM" | jq 'map(select(.status == "CLOSED"))')
           TOTAL_PL=$(echo "$ALL_JSON" | jq '[.[].profit_loss] | add // 0')
           TOTAL_COUNT=$(echo "$ALL_JSON" | jq 'length')
@@ -75,11 +69,7 @@ jobs:
             SUMMARY="📅 Weekly: $WEEK_PL USD\n💼 Trades closed: $WEEK_COUNT\n🏆 Best: $TOP_WIN\n💀 Worst: $TOP_LOSS\n\n💰 Cumulative P&L: $TOTAL_PL USD (Total $TOTAL_COUNT trades)"
           fi
 
-          ESCAPED=$(printf "%s" "$SUMMARY" | python3 - <<'PY'
-import json,sys
-print(json.dumps(sys.stdin.read()))
-PY
-)
+          ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
           echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
           echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
@@ -108,7 +98,4 @@ PY
           }
           EOF
           )
-
           curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
-
-# test trigger
