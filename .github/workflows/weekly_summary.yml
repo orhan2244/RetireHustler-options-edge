@@ -109,8 +109,6 @@ jobs:
               "title": "📊 Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
               "color": 5814783,
               "fields": [
-                { "name": "📈 Weekly P&L", "value": "\$$WEEK_PL", "inline": true },
-                { "name": "💰 Cumulative P&L", "value": "\$$TOTAL_PL", "inline": true },
                 { "name": "🧾 Summary", "value": $SUMMARY }
               ],
               "footer": { "text": "RetireHustler Options Edge • $(date +'%H:%M %Z')" },
