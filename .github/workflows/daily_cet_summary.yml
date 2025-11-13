@@ -50,7 +50,7 @@ jobs:
 
           # CLOSED trades with close_date == today
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.close_date|tostring|startswith($d))))
+            map(select((.close_date|tostring)[0:10] == $d))
           ')
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
             .[] | "\(.ticker // \"N/A\") \(.type // \"\")  \(.strike_price // \"–\")/\(.strike_price_2 // \"–\")  Open:\(.open_date // \"–\")"
@@ -58,7 +58,7 @@ jobs:
 
           # OPENED trades with open_date == today
           OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.open_date|tostring|startswith($d))))
+            map(select((.open_date|tostring)[0:10] == $d))
           ')
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
             .[] | "\(.ticker // \"N/A\") \(.type // \"\")  \(.strike_price // \"–\")/\(.strike_price_2 // \"–\")  Exp:\(.expiration_date // \"–\")"
