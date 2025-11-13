@@ -28,12 +28,13 @@ jobs:
       - name: Fetch all trades from Base44
         id: fetch
         run: |
+          set -euo pipefail
           mkdir -p tmp
           curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
             "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
             -o tmp/trades.json
 
-          # Validate JSON type (allow array or object with items)
+          # Accept either an array or an object with "items"
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
             echo "❌ Invalid Base44 response:"
             cat tmp/trades.json
@@ -43,14 +44,16 @@ jobs:
       - name: Build daily metrics & lists
         id: build
         run: |
+          set -euo pipefail
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Normalize so we always work on an array
-          ITEMS=$(jq -c '.items // .' tmp/trades.json)
+          # Normalize to an array safely (no .items on arrays)
+          ITEMS=$(jq -c 'if type=="object" and has("items") then .items else . end' tmp/trades.json)
 
           # CLOSED today
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.status|tostring|ascii_upcase) == "CLOSED" and (.close_date|tostring|startswith($d))))
+            map(select((.status|tostring|ascii_upcase) == "CLOSED"
+                       and (.close_date|tostring|startswith($d))))
           ')
           DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
 
@@ -67,8 +70,8 @@ jobs:
           ' | head -n 15)
 
           # Fallback text if empty
-          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades today)"; fi
-          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no open positions)"; fi
+          if [ -z "${CLOSED_LINES:-}" ]; then CLOSED_LINES="(no closed trades today)"; fi
+          if [ -z "${OPEN_LINES:-}" ]; then OPEN_LINES="(no open positions)"; fi
 
           CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
