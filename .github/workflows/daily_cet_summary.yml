@@ -28,13 +28,12 @@ jobs:
       - name: Fetch all trades from Base44
         id: fetch
         run: |
-          set -euo pipefail
           mkdir -p tmp
           curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
             "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
             -o tmp/trades.json
 
-          # Accept either an array or an object with "items"
+          # Validate JSON type (allow array or object with items)
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
             echo "❌ Invalid Base44 response:"
             cat tmp/trades.json
@@ -44,34 +43,33 @@ jobs:
       - name: Build daily metrics & lists
         id: build
         run: |
-          set -euo pipefail
           TODAY='${{ steps.dates.outputs.today }}'
 
-          # Normalize to an array safely (no .items on arrays)
-          ITEMS=$(jq -c 'if type=="object" and has("items") then .items else . end' tmp/trades.json)
+          # Normalize (support array or object with items)
+          ITEMS=$(jq -c '.items // .' tmp/trades.json)
 
-          # CLOSED today
+          # CLOSED trades with close_date == today
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.status|tostring|ascii_upcase) == "CLOSED"
-                       and (.close_date|tostring|startswith($d))))
+            map(select((.close_date|tostring|startswith($d))))
           ')
-          DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
-
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
-            .[] | "\(.ticker // "N/A") \(.type // "") @ \(.strike_price // "–") (\(.quantity // 1)x)  P/L: \(.profit_loss // 0)"
-          ' | head -n 12)
+            .[] | "\(.ticker // "N/A") \(.type // "")  \(.strike_price // "–")/\(.strike_price_2 // "–")  Exp:\(.expiration_date // "–")"
+          ' | head -n 20)
 
-          # OPEN positions
-          OPEN_JSON=$(echo "$ITEMS" | jq '
-            map(select((.status|tostring|ascii_upcase) == "OPEN"))
+          # OPENED trades with open_date == today
+          OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
+            map(select((.open_date|tostring|startswith($d))))
           ')
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
-            .[] | "\(.ticker // "N/A") \(.type // "")  Strike: \(.strike_price // "–")  Exp: \(.expiration_date // "–")  OpenPx: \(.open_price // "–")"
-          ' | head -n 15)
+            .[] | "\(.ticker // "N/A") \(.type // "")  \(.strike_price // "–")/\(.strike_price_2 // "–")  Exp:\(.expiration_date // "–")"
+          ' | head -n 20)
 
-          # Fallback text if empty
-          if [ -z "${CLOSED_LINES:-}" ]; then CLOSED_LINES="(no closed trades today)"; fi
-          if [ -z "${OPEN_LINES:-}" ]; then OPEN_LINES="(no open positions)"; fi
+          # Sum of today's closed trades
+          DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+
+          # Fallbacks
+          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no trades closed today)"; fi
+          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no trades opened today)"; fi
 
           CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
@@ -95,10 +93,10 @@ jobs:
               "title": "📊 Daily Trading Summary – $PRETTY (22:00 CET)",
               "color": 3447003,
               "fields": [
-                { "name": "💰 Daily P&L", "value": "\`$PL\`", "inline": true },
+                { "name": "💰 Daily Closed P&L", "value": "\`$PL\`", "inline": true },
                 { "name": "🕒 Timezone", "value": "Europe/Prague", "inline": true },
                 { "name": "✅ Closed Today", "value": $CLOSED },
-                { "name": "📂 Open Positions", "value": $OPEN }
+                { "name": "📂 Opened Today", "value": $OPEN }
               ],
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
               "footer": { "text": "RetireHustler Options Edge" }
