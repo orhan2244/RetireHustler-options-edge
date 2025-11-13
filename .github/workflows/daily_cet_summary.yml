@@ -53,7 +53,7 @@ jobs:
             map(select((.close_date|tostring|startswith($d))))
           ')
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
-            .[] | "\(.ticker // "N/A") \(.type // "")  \(.strike_price // "–")/\(.strike_price_2 // "–")  Exp:\(.expiration_date // "–")"
+            .[] | "\(.ticker // \"N/A\") \(.type // \"\")  \(.strike_price // \"–\")/\(.strike_price_2 // \"–\")  Open:\(.open_date // \"–\")"
           ' | head -n 20)
 
           # OPENED trades with open_date == today
@@ -61,15 +61,15 @@ jobs:
             map(select((.open_date|tostring|startswith($d))))
           ')
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
-            .[] | "\(.ticker // "N/A") \(.type // "")  \(.strike_price // "–")/\(.strike_price_2 // "–")  Exp:\(.expiration_date // "–")"
+            .[] | "\(.ticker // \"N/A\") \(.type // \"\")  \(.strike_price // \"–\")/\(.strike_price_2 // \"–\")  Exp:\(.expiration_date // \"–\")"
           ' | head -n 20)
 
           # Sum of today's closed trades
           DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
 
           # Fallbacks
-          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no trades closed today)"; fi
-          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no trades opened today)"; fi
+          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades today)"; fi
+          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no opened trades today)"; fi
 
           CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
