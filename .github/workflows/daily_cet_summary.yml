@@ -46,7 +46,7 @@ jobs:
           TODAY='${{ steps.dates.outputs.today }}'
 
           # Normalize (support array or object with items)
-          ITEMS=$(jq -c '.items // .' tmp/trades.json)
+          ITEMS=$(jq -c 'if type=="array" then . else (.items // []) end' tmp/trades.json)
 
           # CLOSED trades with close_date == today
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
