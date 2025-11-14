@@ -3,8 +3,8 @@ name: Daily CET Trading Summary to Discord
 on:
   schedule:
     # GitHub cron uses UTC. 22:00 CET = 21:00 UTC, 22:00 CEST = 20:00 UTC.
-    - cron: '0 21 * * 1-5'  # Winter time (CET)
-    - cron: '0 20 * * 1-5'  # Summer time (CEST)
+    - cron: '5 21 * * 1-5'  # Winter time (CET)
+    - cron: '5 20 * * 1-5'  # Summer time (CEST)
   workflow_dispatch: {}
 
 jobs:
