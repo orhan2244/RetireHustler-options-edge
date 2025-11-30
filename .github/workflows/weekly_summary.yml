@@ -30,8 +30,10 @@ jobs:
         id: fetch
         run: |
           mkdir -p tmp
+
+          # Filter ONLY your trades using created_by
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade" \
+            "${{ secrets.BASE44_API_URL }}/entities/Trade?created_by=${{ secrets.BASE44_USER_ID }}" \
             -o tmp/trades.json
 
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
