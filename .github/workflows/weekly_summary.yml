@@ -32,13 +32,13 @@ jobs:
           mkdir -p tmp
 
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-          "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=1000" \
-          -o tmp/trades.json
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=1000" \
+            -o tmp/trades.json
 
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
-          echo "Invalid Base44 response:"
-          cat tmp/trades.json
-          exit 1
+            echo "Invalid Base44 response:"
+            cat tmp/trades.json
+            exit 1
           fi
 
       - name: Build weekly and cumulative metrics
@@ -49,37 +49,65 @@ jobs:
           TODAY='${{ steps.dates.outputs.today }}'
           PRETTY_RANGE='${{ steps.dates.outputs.pretty_range }}'
 
+          # 👇 your email (or move to a secret if you prefer)
+          USER_EMAIL="retirehustler@gmail.com"
+
+          # Normalize items (array or {items: []})
           if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
             ITEMS=$(cat tmp/trades.json)
           else
             ITEMS=$(jq -c '.items // []' tmp/trades.json)
           fi
 
-          # Filter ONLY Orhan's trades
-            ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"${{ secrets.BASE44_USER }}"'"))')
-
+          # Keep created_by so we can filter on it
           NORM=$(echo "$ITEMS" | jq '
             map({
               ticker,
               type,
+              created_by,
               status: ((.status // "" | tostring) | ascii_upcase),
               close_date: ((.close_date // "" | tostring) | .[0:10]),
               profit_loss: (.profit_loss // 0)
             })
           ')
 
-          WEEK_JSON=$(echo "$NORM" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
-            map(select(.status == "CLOSED" and .close_date >= $s and .close_date <= $e))
+          # Weekly closed trades for THIS user only
+          WEEK_JSON=$(echo "$NORM" | jq \
+            --arg s "$WEEK_START" \
+            --arg e "$TODAY" \
+            --arg u "$USER_EMAIL" '
+            map(select(
+              .created_by == $u and
+              .status == "CLOSED" and
+              .close_date >= $s and
+              .close_date <= $e
+            ))
           ')
 
           WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0' | xargs printf "%.1f")
           WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
 
-          TOP_WIN=$(echo "$WEEK_JSON" | jq -r 'if length>0 then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss|tonumber|round|tostring)" else "N/A" end')
-          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r 'if length>0 then min_by(.profit_loss) | "\(.ticker) \(.profit_loss|tonumber|round|tostring)" else "N/A" end')
+          TOP_WIN=$(echo "$WEEK_JSON" | jq -r '
+            if length>0
+            then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss|tonumber|round|tostring)"
+            else "N/A"
+            end')
 
-          TOTAL_PL=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | [.[].profit_loss] | add // 0' | xargs printf "%.1f")
-          TOTAL_COUNT=$(echo "$NORM" | jq 'map(select(.status == "CLOSED")) | length')
+          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r '
+            if length>0
+            then min_by(.profit_loss) | "\(.ticker) \(.profit_loss|tonumber|round|tostring)"
+            else "N/A"
+            end')
+
+          # Cumulative closed trades for THIS user only
+          TOTAL_PL=$(echo "$NORM" | jq --arg u "$USER_EMAIL" '
+            map(select(.created_by == $u and .status == "CLOSED"))
+            | [.[].profit_loss] | add // 0
+          ' | xargs printf "%.1f")
+
+          TOTAL_COUNT=$(echo "$NORM" | jq --arg u "$USER_EMAIL" '
+            map(select(.created_by == $u and .status == "CLOSED")) | length
+          ')
 
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
