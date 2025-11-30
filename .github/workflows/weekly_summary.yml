@@ -30,14 +30,17 @@ jobs:
         id: fetch
         run: |
           mkdir -p tmp
-          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
-            "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000&created_by=${{ secrets.BASE44_USER }}" \
-            -o tmp/trades.json
 
+          # Fetch ALL trades (filter later)
+          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+          "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
+          -o tmp/trades.json
+
+          # Validate JSON (array OR object with items)
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
-            echo "Invalid Base44 response:"
-            cat tmp/trades.json
-            exit 1
+          echo "Invalid Base44 response:"
+          cat tmp/trades.json
+          exit 1
           fi
 
       - name: Build weekly and cumulative metrics
