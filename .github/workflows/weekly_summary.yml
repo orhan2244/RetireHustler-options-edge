@@ -27,21 +27,17 @@ jobs:
           echo "pretty_range=$PRETTY_RANGE" >> $GITHUB_OUTPUT
 
       - name: Fetch all trades from Base44
-          id: fetch
-          run: |
+        id: fetch
+        run: |
           mkdir -p tmp
+          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+            "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000&created_by=${{ secrets.BASE44_USER }}" \
+            -o tmp/trades.json
 
-          curl -s -X POST \
-          -H "Content-Type: application/json" \
-          -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-          -d "{\"filter\": {\"created_by\": \"${{ secrets.BASE44_USER_ID }}\"}}" \
-          "${{ secrets.BASE44_API_URL }}/query" \
-          -o tmp/trades.json
-
-          if ! jq -e 'type==\"object\" and has(\"items\")' tmp/trades.json > /dev/null; then
-          echo "Invalid Base44 response:"
-          cat tmp/trades.json
-          exit 1
+          if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
+            echo "Invalid Base44 response:"
+            cat tmp/trades.json
+            exit 1
           fi
 
       - name: Build weekly and cumulative metrics
