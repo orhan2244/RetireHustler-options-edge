@@ -55,6 +55,9 @@ jobs:
             ITEMS=$(jq -c '.items // []' tmp/trades.json)
           fi
 
+          # Filter ONLY Orhan's trades
+            ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"${{ secrets.BASE44_USER }}"'"))')
+
           NORM=$(echo "$ITEMS" | jq '
             map({
               ticker,
