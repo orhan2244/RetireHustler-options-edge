@@ -2,7 +2,6 @@ name: Daily CET Trading Summary to Discord
 
 on:
   schedule:
-    # GitHub cron uses UTC. 22:00 CET = 21:00 UTC, 22:00 CEST = 20:00 UTC.
     - cron: '5 21 * * 1-5'  # Winter time (CET)
     - cron: '5 20 * * 1-5'  # Summer time (CEST)
   workflow_dispatch: {}
@@ -29,11 +28,12 @@ jobs:
         id: fetch
         run: |
           mkdir -p tmp
-          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
+
+          # FIX 1 — Use correct Base44 header
+          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
             "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
             -o tmp/trades.json
 
-          # Validate JSON type (allow array or object with items)
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
             echo "❌ Invalid Base44 response:"
             cat tmp/trades.json
@@ -45,8 +45,17 @@ jobs:
         run: |
           TODAY='${{ steps.dates.outputs.today }}'
 
+          USER_EMAIL="retirehustler@gmail.com"
+
           # Normalize trade list (array or items[])
-          ITEMS=$(jq -c 'if type=="array" then . else (.items // []) end' tmp/trades.json)
+          if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
+            ITEMS=$(cat tmp/trades.json)
+          else
+            ITEMS=$(jq -c '.items // []' tmp/trades.json)
+          fi
+
+          # FIX 2 — Filter ONLY your trades
+          ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
 
           ########################################
           # CLOSED trades today
