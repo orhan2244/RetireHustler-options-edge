@@ -31,12 +31,10 @@ jobs:
         run: |
           mkdir -p tmp
 
-          # Fetch ALL trades (filter later)
-          curl -s -H "Authorization: Bearer ${{ secrets.BASE44_API_KEY }}" \
-          "${{ secrets.BASE44_API_URL }}/entities/Trade?limit=1000" \
+          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+          "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=1000" \
           -o tmp/trades.json
 
-          # Validate JSON (array OR object with items)
           if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
           echo "Invalid Base44 response:"
           cat tmp/trades.json
