@@ -109,11 +109,10 @@ jobs:
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
-              "title": "📊 Daily Trading Summary – $PRETTY (22:00 CET)",
+              "title": "📊 Daily Trading Summary – $PRETTY ",
               "color": 3447003,
               "fields": [
                 { "name": "💰 Daily Closed P&L", "value": "\`$PL\`", "inline": true },
-                { "name": "🕒 Timezone", "value": "Europe/Prague", "inline": true },
                 { "name": "✅ Closed Today", "value": $CLOSED },
                 { "name": "📂 Opened Today", "value": $OPEN }
               ],
