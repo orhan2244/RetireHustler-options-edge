@@ -95,7 +95,7 @@ jobs:
             # 🔥 only if profit > 0
             .flame = (if .profit_loss!=null and .profit_loss > 0 then " 🔥" else "" end) |
 
-            "\( .prefix ) \( .qty ) \( .ticker ) - \( .type ) - \( .s1 )/\( .s2 ) @ \( .px ) for $\(.pl) profit with \(.roi)% ROI\( .flame )"
+            "\(.prefix) \(.quantity|tostring|sub(\"\\.0$\";\"\")) \(.ticker) - \(.type) - \(.strike_price|tostring|sub(\"\\.0$\";\"\"))/\(.strike_price_2|tostring|sub(\"\\.0$\";\"\")) @ \(.close_value // .close_premium) for $\(.profit_loss|tostring|sub(\"([0-9]*\\.[0-9]{2}).*\";\"\\1\")) profit with \((.roi|tostring))% ROI\(.flame)"
           ')
 
           ########################################
@@ -124,7 +124,7 @@ jobs:
           # open price
             .px = (.open_price // .open_value // .open_premium // "") |
 
-            "\( .prefix ) \( .qty ) \( .ticker ) - \( .type ) - \( .s1 )/\( .s2 ) @\( .px ) Exp \( .expiration_date )"
+            "\(.prefix) \(.quantity|tostring|sub(\"\\.0$\";\"\")) \(.ticker) - \(.type) - \(.strike_price|tostring|sub(\"\\.0$\";\"\"))/\(.strike_price_2|tostring|sub(\"\\.0$\";\"\")) @\(.open_value // .open_premium) Exp \(.expiration_date)"
             ')
           ########################################
           # Daily closed P&L
