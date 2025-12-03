@@ -47,89 +47,94 @@ jobs:
 
           USER_EMAIL="retirehustler@gmail.com"
 
-          # Normalize items array
+          # Normalize trade list (array or items[])
           if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
             ITEMS=$(cat tmp/trades.json)
           else
             ITEMS=$(jq -c '.items // []' tmp/trades.json)
           fi
 
+          # Filter only your trades
           ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
 
           ########################################
-          # FORMATTER function for each trade
+          # BUILD TWITTER-STYLE LINES
           ########################################
-          format_trade() {
-            jq -r '
-              def clean(x):
-                if x == null then "" 
-                else
-                  if (x|type)=="number" and (x|tostring|endswith(".0")) 
-                    then (x|tostring|sub("\\.0$";""))
-                  else x|tostring end
-                end;
+          FORMAT_TRADE='
+            def n(x):
+              if x == null then "–"
+              elif (x|type) == "number" then
+                if (x|floor) == x then (x|tostring)
+                else (x|tostring)
+              else x
+              end;
 
-              def fmt(n):
-                if n==null then "0"
-                else (n|tonumber|(. * 100.0)|round/100.0|tostring)
-                end;
+            def prefix(dir; status):
+              if dir=="BUY"  and status=="Open"   then "Buy to Open"
+              elif dir=="BUY"  and status=="Closed" then "Sell to Close"
+              elif dir=="SELL" and status=="Open"   then "Sell to Open"
+              elif dir=="SELL" and status=="Closed" then "Buy to Close"
+              else "UNKNOWN"
+              end;
 
-              def prefix(dir; status):
-                if dir=="BUY" and status=="Open" then "Buy to Open"
-                elif dir=="BUY" and status=="Closed" then "Sell to Close"
-                elif dir=="SELL" and status=="Open" then "Sell to Open"
-                elif dir=="SELL" and status=="Closed" then "Buy to Close"
-                else "UNKNOWN"
-                end;
+            def roi(pnl; collateral):
+              if collateral == null or collateral == 0 then "0.00"
+              else ((pnl / collateral * 100) | tonumber | (. * 100 | round / 100) | tostring)
+              end;
 
-              def line(t):
-                if t.status=="Closed" then
-                  "\(prefix(t.direction; t.status)) \(clean(t.quantity)) \(t.ticker) - \(t.type) - \(clean(t.strike_price))/\(clean(t.strike_price_2)) @ \(clean(t.close_price)) for $\((t.profit_loss//0)) profit with \(fmt(t.roi))% ROI \(if (t.profit_loss//0)>0 then "🔥" else "" end)"
-                else
-                  "\(prefix(t.direction; t.status)) \(clean(t.quantity)) \(t.ticker) - \(t.type) - \(clean(t.strike_price))/\(clean(t.strike_price_2)) @\(clean(t.open_price)) Exp \(t.expiration_date)"
-                end
-              ' <<< "$1"
-          }
+            def strikefmt(s1; s2):
+              (n(s1) + "/" + n(s2));
 
-          ########################################
-          # CLOSED trades yesterday
-          ########################################
-          CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.close_date|tostring) | startswith($d)))
-          ')
+            . as $t
+            | $t
+            | if .status == "Closed" then
+                (prefix(.direction; .status)
+                 + " " + n(.quantity)
+                 + " " + (.ticker // "N/A")
+                 + " - " + (.type // "")
+                 + " - " + strikefmt(.strike_price; .strike_price_2)
+                 + " @ " + n(.close_price)
+                 + " for $" + n(.profit_loss)
+                 + " profit with "
+                 + roi(.profit_loss; .collateral_required)
+                 + "% ROI 🔥"
+                )
+              else
+                (prefix(.direction; .status)
+                 + " " + n(.quantity)
+                 + " " + (.ticker // "N/A")
+                 + " - " + (.type // "")
+                 + " - " + strikefmt(.strike_price; .strike_price_2)
+                 + " @" + n(.open_price)
+                 + " Exp " + (.expiration_date // "–")
+                )
+              end
+          '
 
-          CLOSED_LINES=""
-          for row in $(echo "$CLOSED_JSON" | jq -c '.[]'); do
-            CLOSED_LINES+=$(format_trade "$row")
-            CLOSED_LINES+=$'\n'
-          done
+          # Closed today
+          CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" 'map(select((.close_date|tostring) | startswith($d)))')
+          CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r "[.[] | $FORMAT_TRADE] | .[]" | head -n 20)
 
-          ########################################
-          # OPENED trades yesterday
-          ########################################
-          OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.open_date|tostring) | startswith($d)))
-          ')
+          # Opened today
+          OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" 'map(select((.open_date|tostring) | startswith($d)))')
+          OPEN_LINES=$(echo "$OPEN_JSON" | jq -r "[.[] | $FORMAT_TRADE] | .[]" | head -n 20)
 
-          OPEN_LINES=""
-          for row in $(echo "$OPEN_JSON" | jq -c '.[]'); do
-            OPEN_LINES+=$(format_trade "$row")
-            OPEN_LINES+=$'\n'
-          done
+          # Fallbacks
+          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades)"; fi
+          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no opened trades)"; fi
 
-          ########################################
-          # DAILY P&L
-          ########################################
-          DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+          CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 - <<'EOF'
+          import json,sys
+          print(json.dumps(sys.stdin.read()))
+          EOF
+          )
 
-          # fallbacks
-          [ -z "$CLOSED_LINES" ] && CLOSED_LINES="(no closed trades)"
-          [ -z "$OPEN_LINES" ] && OPEN_LINES="(no opened trades)"
+          OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 - <<'EOF'
+          import json,sys
+          print(json.dumps(sys.stdin.read()))
+          EOF
+          )
 
-          CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
-          OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
-
-          echo "daily_pl=$DAILY_PL" >> $GITHUB_OUTPUT
           echo "closed_list=$CLOSED_ESCAPED" >> $GITHUB_OUTPUT
           echo "open_list=$OPEN_ESCAPED" >> $GITHUB_OUTPUT
 
