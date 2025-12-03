@@ -66,25 +66,36 @@ jobs:
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
           .[] |
 
-          # prefix rules
+          # prefix
           .prefix =
-          (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
-           elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
-           else "" end) |
+            (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
+             elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
+             else "" end) |
 
-          # ROI calc with 2 decimals
-          .roi_raw =
-          (if (.return_on_capital!=null) then (.return_on_capital*100)
-           elif (.buying_power!=null and .buying_power!=0)
-           then ((.profit_loss / .buying_power) * 100)
-           else 0 end) |
+          # clean qty and strikes
+          .qty_clean = (.quantity | if floor==. then tostring else tostring end) |
+            .strike1_clean = (.strike_price | if floor==. then tostring else tostring end) |
+          .strike2_clean = (.strike_price_2 | if floor==. then tostring else tostring end) |
+      
+            # format prices: close_value or close_premium → 2 decimals
+          .close_px = ((.close_value // .close_premium) | if .==null then "0" else (. as $n | ($n|tonumber|.)) end)
+            | ( . | tonumber | tostring ) |
 
-          .roi = ((.roi_raw * 100 | floor) / 100) |
+            # profit formatted 2 decimals
+            .profit_clean = (.profit_loss | tonumber | (. * 100 | round / 100) | tostring) |
 
-            # 🔥 only if profit > 0
-          .flame = (if (.profit_loss != null and .profit_loss > 0) then " 🔥" else "" end) |
+            # ROI formatted 2 decimals
+          .roi_clean = (
+            if (.return_on_capital!=null) then (.return_on_capital*100)
+            elif (.buying_power!=null and .buying_power!=0) then (.profit_loss/.buying_power*100)
+            else 0 end
+            | (. * 100 | round / 100) | tostring ) |
+  
+            # flame only on profit
+            .flame = (if (.profit_loss != null and .profit_loss > 0) then " 🔥" else "" end) |
 
-            "\(.prefix) \(.quantity) \(.ticker) - \(.type) - \(.strike_price)/\(.strike_price_2) @ \(.close_price) for $\(.profit_loss) profit with \(.roi)% ROI\(.flame)"
+            # final output
+            "\(.prefix) \(.qty_clean) \(.ticker) - \(.type) - \(.strike1_clean)/\(.strike2_clean) @ \(.close_px) for $\(.profit_clean) profit with \(.roi_clean)% ROI\(.flame)"
             ')
 
           ########################################
@@ -97,15 +108,23 @@ jobs:
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
           .[] |
 
-          # prefix rules
+          # prefix
           .prefix =
-          (if .direction=="BUY" and .status=="Open" then "Buy to Open"
+            (if .direction=="BUY" and .status=="Open" then "Buy to Open"
              elif .direction=="SELL" and .status=="Open" then "Sell to Open"
-           else "" end) |
-  
-          "\(.prefix) \(.quantity) \(.ticker) - \(.type) - \(.strike_price)/\(.strike_price_2) @\(.open_price) Exp \(.expiration_date)"
-          ')
+             else "" end) |
 
+            # clean qty and strikes
+            .qty_clean = (.quantity | if floor==. then tostring else tostring end) |
+            .strike1_clean = (.strike_price | if floor==. then tostring else tostring end) |
+            .strike2_clean = (.strike_price_2 | if floor==. then tostring else tostring end) |
+
+              # format entry price 2 decimals
+              .open_px = ((.open_value // .open_premium) | if .==null then "0" else (. as $n | ($n|tonumber|.)) end)
+              | ( . | tonumber | tostring ) |
+
+              "\(.prefix) \(.qty_clean) \(.ticker) - \(.type) - \(.strike1_clean)/\(.strike2_clean) @\(.open_px) Exp \(.expiration_date)"
+          ')
           ########################################
           # Daily closed P&L
           ########################################
