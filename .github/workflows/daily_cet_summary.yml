@@ -42,7 +42,7 @@ jobs:
       - name: Build daily metrics & lists
         id: build
         run: |
-          TODAY='${{ steps.dates.outputs.today }}'
+          TODAY=$(date -d "yesterday" +"%Y-%m-%d")
 
           USER_EMAIL="retirehustler@gmail.com"
 
