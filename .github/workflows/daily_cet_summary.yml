@@ -66,37 +66,37 @@ jobs:
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
           .[] |
 
-          # prefix
+          # prefix rules
           .prefix =
-            (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
+          (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
              elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
              else "" end) |
 
-          # clean qty and strikes
-          .qty_clean = (.quantity | if floor==. then tostring else tostring end) |
-            .strike1_clean = (.strike_price | if floor==. then tostring else tostring end) |
-          .strike2_clean = (.strike_price_2 | if floor==. then tostring else tostring end) |
+            # qty (integer formatting)
+            .qty = (if .quantity!=null then (.quantity|floor) else .quantity end) |
       
-            # format prices: close_value or close_premium → 2 decimals
-          .close_px = ((.close_value // .close_premium) | if .==null then "0" else (. as $n | ($n|tonumber|.)) end)
-            | ( . | tonumber | tostring ) |
+            # strikes (exactly as stored, no .0 added)
+            .s1 = (.strike_price // "") |
+            .s2 = (.strike_price_2 // "") |
 
-            # profit formatted 2 decimals
-            .profit_clean = (.profit_loss | tonumber | (. * 100 | round / 100) | tostring) |
+            # close price (use close_price or close_value)
+            .px = (.close_price // .close_value // .close_premium // "") |
 
-            # ROI formatted 2 decimals
-          .roi_clean = (
-            if (.return_on_capital!=null) then (.return_on_capital*100)
-            elif (.buying_power!=null and .buying_power!=0) then (.profit_loss/.buying_power*100)
-            else 0 end
-            | (. * 100 | round / 100) | tostring ) |
-  
-            # flame only on profit
-            .flame = (if (.profit_loss != null and .profit_loss > 0) then " 🔥" else "" end) |
+            # profit rounded to 2 decimals
+          .pl = (if .profit_loss!=null then ((.profit_loss*100)|round/100) else 0 end) |
+    
+            # ROI already correct, but convert numeric → string cleanly
+            .roi = (if .return_on_capital!=null
+          then ((.return_on_capital*100*100)|round/100)
+          elif (.buying_power!=null and .buying_power!=0)
+          then (((.profit_loss/.buying_power)*100*100)|round/100)
+          else 0 end) |
 
-            # final output
-            "\(.prefix) \(.qty_clean) \(.ticker) - \(.type) - \(.strike1_clean)/\(.strike2_clean) @ \(.close_px) for $\(.profit_clean) profit with \(.roi_clean)% ROI\(.flame)"
-            ')
+            # 🔥 only if profit > 0
+            .flame = (if .profit_loss!=null and .profit_loss > 0 then " 🔥" else "" end) |
+
+            "\( .prefix ) \( .qty ) \( .ticker ) - \( .type ) - \( .s1 )/\( .s2 ) @ \( .px ) for $\(.pl) profit with \(.roi)% ROI\( .flame )"
+          ')
 
           ########################################
           # OPENED trades today
@@ -108,23 +108,24 @@ jobs:
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
           .[] |
 
-          # prefix
+          # prefix rules
           .prefix =
             (if .direction=="BUY" and .status=="Open" then "Buy to Open"
              elif .direction=="SELL" and .status=="Open" then "Sell to Open"
              else "" end) |
 
-            # clean qty and strikes
-            .qty_clean = (.quantity | if floor==. then tostring else tostring end) |
-            .strike1_clean = (.strike_price | if floor==. then tostring else tostring end) |
-            .strike2_clean = (.strike_price_2 | if floor==. then tostring else tostring end) |
+            # qty integer
+            .qty = (if .quantity!=null then (.quantity|floor) else .quantity end) |
 
-              # format entry price 2 decimals
-              .open_px = ((.open_value // .open_premium) | if .==null then "0" else (. as $n | ($n|tonumber|.)) end)
-              | ( . | tonumber | tostring ) |
+          # strikes exactly as-is
+            .s1 = (.strike_price // "") |
+            .s2 = (.strike_price_2 // "") |
 
-              "\(.prefix) \(.qty_clean) \(.ticker) - \(.type) - \(.strike1_clean)/\(.strike2_clean) @\(.open_px) Exp \(.expiration_date)"
-          ')
+          # open price
+            .px = (.open_price // .open_value // .open_premium // "") |
+
+            "\( .prefix ) \( .qty ) \( .ticker ) - \( .type ) - \( .s1 )/\( .s2 ) @\( .px ) Exp \( .expiration_date )"
+            ')
           ########################################
           # Daily closed P&L
           ########################################
