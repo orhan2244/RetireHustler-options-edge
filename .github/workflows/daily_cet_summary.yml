@@ -64,9 +64,26 @@ jobs:
           ')
 
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
-            .[] |
-            "\(.ticker // "N/A") \(.type // "")  \(.strike_price // "–")/\(.strike_price_2 // "–")  Open:\(.open_date // "–")"
-          ' | head -n 20)
+          .[] |
+
+          # prefix rules
+          .prefix =
+          (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
+           elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
+           else "" end) |
+
+          # ROI (optional)
+              .roi = (if (.return_on_capital!=null) then (.return_on_capital*100)
+              elif (.buying_power!=null and .buying_power!=0)
+              then ((.profit_loss / .buying_power) * 100)
+              else null end) |
+  
+          # 🔥 only if profit > 0
+            .flame = (if (.profit_loss != null and .profit_loss > 0) then " 🔥" else "" end) |
+
+          # final line
+            "\(.prefix) \(.quantity) \(.ticker) - \(.type) - \(.strike_price)/\(.strike_price_2) @ \(.close_value // .close_premium) for $\(.profit_loss) profit with \((.roi|tostring))% ROI\(.flame)"
+          ' )
 
           ########################################
           # OPENED trades today
@@ -76,9 +93,16 @@ jobs:
           ')
 
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
-            .[] |
-            "\(.ticker // "N/A") \(.type // "")  \(.strike_price // "–")/\(.strike_price_2 // "–")  Exp:\(.expiration_date // "–")"
-          ' | head -n 20)
+          .[] |
+
+          # prefix rules
+          .prefix =
+          (if .direction=="BUY" and .status=="Open" then "Buy to Open"
+           elif .direction=="SELL" and .status=="Open" then "Sell to Open"
+           else "" end) |
+
+          "\(.prefix) \(.quantity) \(.ticker) - \(.type) - \(.strike_price)/\(.strike_price_2) @\(.open_value // .open_premium) Exp \(.expiration_date)"
+          ')
 
           ########################################
           # Daily closed P&L
