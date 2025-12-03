@@ -66,36 +66,29 @@ jobs:
           CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
           .[] |
 
-          # prefix rules
           .prefix =
           (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
-             elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
-             else "" end) |
+           elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
+           else "" end) |
 
-            # qty (integer formatting)
-            .qty = (if .quantity!=null then (.quantity|floor) else .quantity end) |
+          .roi = (
+            if (.return_on_capital != null)
+            then (.return_on_capital * 100)
+          elif (.buying_power != null and .buying_power != 0)
+            then ((.profit_loss / .buying_power) * 100)
+          else 0 end
+          ) |
+
+          .flame = (if .profit_loss != null and .profit_loss > 0 then " 🔥" else "" end) |
+
+            # FORMATTERS
+          .qty_str    = (.quantity|tostring|sub("\\.0$";"")) |
+          .strike1    = (.strike_price|tostring|sub("\\.0$";"")) |
+          .strike2    = (.strike_price_2|tostring|sub("\\.0$";"")) |
+          .profit_str = (.profit_loss|tostring|sub("([0-9]*\\.[0-9]{2}).*"; "\\1")) |
+          .roi_str    = (.roi|tostring|sub("([0-9]*\\.[0-9]{2}).*"; "\\1")) |
       
-            # strikes (exactly as stored, no .0 added)
-            .s1 = (.strike_price // "") |
-            .s2 = (.strike_price_2 // "") |
-
-            # close price (use close_price or close_value)
-            .px = (.close_price // .close_value // .close_premium // "") |
-
-            # profit rounded to 2 decimals
-          .pl = (if .profit_loss!=null then ((.profit_loss*100)|round/100) else 0 end) |
-    
-            # ROI already correct, but convert numeric → string cleanly
-            .roi = (if .return_on_capital!=null
-          then ((.return_on_capital*100*100)|round/100)
-          elif (.buying_power!=null and .buying_power!=0)
-          then (((.profit_loss/.buying_power)*100*100)|round/100)
-          else 0 end) |
-
-            # 🔥 only if profit > 0
-            .flame = (if .profit_loss!=null and .profit_loss > 0 then " 🔥" else "" end) |
-
-            "\(.prefix) \(.quantity|tostring|sub(\"\\.0$\";\"\")) \(.ticker) - \(.type) - \(.strike_price|tostring|sub(\"\\.0$\";\"\"))/\(.strike_price_2|tostring|sub(\"\\.0$\";\"\")) @ \(.close_value // .close_premium) for $\(.profit_loss|tostring|sub(\"([0-9]*\\.[0-9]{2}).*\";\"\\1\")) profit with \((.roi|tostring))% ROI\(.flame)"
+          "\(.prefix) \(.qty_str) \(.ticker) - \(.type) - \(.strike1)/\(.strike2) @ \(.close_value // .close_premium) for $\(.profit_str) profit with \(.roi_str)% ROI\(.flame)"
           ')
 
           ########################################
