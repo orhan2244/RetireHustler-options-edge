@@ -108,7 +108,7 @@ jobs:
           ########################################
           # Daily closed P&L
           ########################################
-          DAILY_PL=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+          DAILY_PL=$(echo "$CLOSED_JSON" | jq -r '[.[].profit_loss // 0] | add // 0 | (. * 100 | round / 100) | "$" + (tostring)')
 
           # Fallbacks
           if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades today)"; fi
