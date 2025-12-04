@@ -136,7 +136,7 @@ jobs:
               "title": "📊 Daily Trading Summary – $PRETTY ",
               "color": 3447003,
               "fields": [
-                { "name": "💰 Daily Closed P&L", "value": "\`$PL\`", "inline": true },
+                { "name": "💰 Daily Closed P&L", "value": "**$PL**", "inline": false },
                 { "name": "✅ Closed Today", "value": $CLOSED },
                 { "name": "📂 Opened Today", "value": $OPEN }
               ],
