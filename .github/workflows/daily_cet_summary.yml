@@ -80,7 +80,7 @@ jobs:
                   | .qty = (.quantity|tostring|sub("\\.0$";""))
                   | .s1 = (.strike_price|tostring|sub("\\.0$";""))
                   | .s2 = (.strike_price_2|tostring|sub("\\.0$";""))
-                  | .price = @ \(.close_price)
+                  | .price = (.close_price // .close_value // .close_premium // "N/A")
                   | .flame = (if (.profit_loss>0) then " 🔥" else "" end)
                     | "\(.prefix) \(.qty) \(.ticker) - \(.type) - \(.s1)/\(.s2) @ \(.price) for $\(.profit_fmt) profit with \(.roi)% ROI\(.flame)"
               ')
@@ -101,7 +101,7 @@ jobs:
             | .qty = (.quantity|tostring|sub("\\.0$";""))
             | .s1 = (.strike_price|tostring|sub("\\.0$";""))
             | .s2 = (.strike_price_2|tostring|sub("\\.0$";""))
-            | .price = @ \(.open_price)
+            | .price = (.open_price // .open_value // .open_premium // "N/A")
             | "\(.prefix) \(.qty) \(.ticker) - \(.type) - \(.s1)/\(.s2) @\(.price) Exp \(.expiration_date)"
             ')
 
