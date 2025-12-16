@@ -49,7 +49,12 @@ jobs:
           TODAY='${{ steps.dates.outputs.today }}'
           USER_EMAIL="retirehustler@gmail.com"
 
-          ITEMS=$(jq -c '.items // .' tmp/trades.json)
+          if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
+          ITEMS=$(cat tmp/trades.json)
+          else
+          ITEMS=$(jq -c '.items // []' tmp/trades.json)
+          fi
+
           ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
 
           ########################################
@@ -76,9 +81,23 @@ jobs:
           ########################################
           # CONSTRUCTED CLOSED LEGS (AUTHORITATIVE)
           ########################################
-          REALIZED=$(jq -c '.items // .' tmp/realized.json)
-          LEGS=$(jq -c '.items // .' tmp/legs.json)
-          MASTER=$(jq -c '.items // .' tmp/master.json)
+          if jq -e 'type=="array"' tmp/realized.json >/dev/null; then
+          REALIZED=$(cat tmp/realized.json)
+          else
+          REALIZED=$(jq -c '.items // []' tmp/realized.json)
+          fi
+          
+          if jq -e 'type=="array"' tmp/legs.json >/dev/null; then
+          LEGS=$(cat tmp/legs.json)
+          else
+          LEGS=$(jq -c '.items // []' tmp/legs.json)
+          fi
+          
+          if jq -e 'type=="array"' tmp/master.json >/dev/null; then
+          MASTER=$(cat tmp/master.json)
+          else
+          MASTER=$(jq -c '.items // []' tmp/master.json)
+          fi
 
           TODAY_REALIZED=$(echo "$REALIZED" | jq --arg d "$TODAY" '
             map(select(.realization_date == $d))
