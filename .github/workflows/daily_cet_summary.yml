@@ -160,41 +160,11 @@ jobs:
           echo "closed_list=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" >> $GITHUB_OUTPUT
           echo "open_list=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" >> $GITHUB_OUTPUT
 
-      - name: Send Discord message (DEBUG)
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
+      - name: Check Discord webhook secret
         run: |
-          echo "Webhook is: ${DISCORD_WEBHOOK:0:30}..."
-
-          PRETTY='${{ steps.dates.outputs.pretty }}'
-          PL='${{ steps.build.outputs.daily_pl }}'
-          CLOSED='${{ steps.build.outputs.closed_list }}'
-          OPEN='${{ steps.build.outputs.open_list }}'
-
-          PAYLOAD=$(cat <<EOF
-          {
-            "embeds": [{
-              "title": "📊 Daily Trading Summary – $PRETTY",
-              "color": 3447003,
-              "fields": [
-                { "name": "💰 Daily Closed P&L", "value": "**$PL**", "inline": false },
-                { "name": "✅ Closed Today", "value": $CLOSED },
-                { "name": "📂 Opened Today", "value": $OPEN }
-              ]
-            }]
-          }
-          EOF
-          )
-
-          echo "---- PAYLOAD ----"
-          echo "$PAYLOAD"
-          echo "-----------------"
-
-          HTTP_CODE=$(curl -s -o response.txt -w "%{http_code}" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" \
-            "$DISCORD_WEBHOOK")
-
-          echo "HTTP CODE: $HTTP_CODE"
-          echo "RESPONSE:"
-          cat response.txt
+          if [ -z "${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}" ]; then
+            echo "❌ DISCORD WEBHOOK SECRET IS EMPTY"
+          else
+            echo "✅ DISCORD WEBHOOK SECRET IS PRESENT"
+            echo "Starts with: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}" | cut -c1-40
+          fi
