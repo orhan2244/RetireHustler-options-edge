@@ -15,12 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get today's date (CET/CEST)
+      - name: Get report date (YESTERDAY – TEMP)
         id: dates
         run: |
-          TODAY=$(date +"%Y-%m-%d")
-          PRETTY=$(date +"%b %d, %Y")
-          echo "today=$TODAY" >> $GITHUB_OUTPUT
+          REPORT_DATE=$(date -d "yesterday" +"%Y-%m-%d")
+          PRETTY=$(date -d "yesterday" +"%b %d, %Y")
+          echo "today=$REPORT_DATE" >> $GITHUB_OUTPUT
           echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
       - name: Fetch data from Base44
