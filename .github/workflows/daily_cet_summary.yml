@@ -150,29 +150,30 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
         run: |
-          PRETTY='${{ steps.dates.outputs.pretty }}'
-          PL='${{ steps.build.outputs.daily_pl }}'
+          python3 <<'PY'
+          import json, subprocess, os
 
-          # Decode JSON-escaped outputs back to plain strings
-          CLOSED=$(echo '${{ steps.build.outputs.closed_list }}' | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))')
-          OPEN=$(echo '${{ steps.build.outputs.open_list }}' | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))')
+          pretty = "${{ steps.dates.outputs.pretty }}"
+          pl = "${{ steps.build.outputs.daily_pl }}"
 
-          PAYLOAD=$(cat <<EOF
-          {
+          closed = json.loads('${{ steps.build.outputs.closed_list }}')
+          open_ = json.loads('${{ steps.build.outputs.open_list }}')
+
+          payload = {
             "embeds": [{
-              "title": "📊 Daily Trading Summary – $PRETTY",
+              "title": f"📊 Daily Trading Summary – {pretty}",
               "color": 3447003,
               "fields": [
-                { "name": "💰 Daily Closed P&L", "value": "**$PL**", "inline": false },
-                { "name": "✅ Closed Today", "value": "$CLOSED", "inline": false },
-                { "name": "📂 Opened Today", "value": "$OPEN", "inline": false }
+                { "name": "💰 Daily Closed P&L", "value": f"**{pl}**", "inline": False },
+                { "name": "✅ Closed Today", "value": closed, "inline": False },
+                { "name": "📂 Opened Today", "value": open_, "inline": False }
               ],
               "footer": { "text": "RetireHustler Options Edge" }
             }]
           }
-          EOF
-          )
 
-          curl -s -H "Content-Type: application/json" \
-            -d "$PAYLOAD" \
-            "$DISCORD_WEBHOOK"
+          subprocess.run(
+            ["curl", "-s", "-H", "Content-Type: application/json", "-d", json.dumps(payload), os.environ["DISCORD_WEBHOOK"]],
+            check=True
+          )
+          PY
