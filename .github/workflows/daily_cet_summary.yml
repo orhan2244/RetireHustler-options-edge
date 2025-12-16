@@ -146,10 +146,33 @@ jobs:
           echo "closed_list=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" >> $GITHUB_OUTPUT
           echo "open_list=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" >> $GITHUB_OUTPUT
 
-      - name: Discord connectivity test
+      - name: Send Discord message
         env:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
         run: |
-          curl -v -H "Content-Type: application/json" \
-            -d '{"content":"✅ GitHub Actions test message"}' \
+          PRETTY='${{ steps.dates.outputs.pretty }}'
+          PL='${{ steps.build.outputs.daily_pl }}'
+
+          # Decode JSON-escaped outputs back to plain strings
+          CLOSED=$(echo '${{ steps.build.outputs.closed_list }}' | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))')
+          OPEN=$(echo '${{ steps.build.outputs.open_list }}' | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()))')
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "📊 Daily Trading Summary – $PRETTY",
+              "color": 3447003,
+              "fields": [
+                { "name": "💰 Daily Closed P&L", "value": "**$PL**", "inline": false },
+                { "name": "✅ Closed Today", "value": "$CLOSED", "inline": false },
+                { "name": "📂 Opened Today", "value": "$OPEN", "inline": false }
+              ],
+              "footer": { "text": "RetireHustler Options Edge" }
+            }]
+          }
+          EOF
+          )
+
+          curl -s -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
             "$DISCORD_WEBHOOK"
