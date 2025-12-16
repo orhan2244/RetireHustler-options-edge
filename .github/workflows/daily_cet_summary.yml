@@ -144,7 +144,11 @@ jobs:
           PL_SIMPLE=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
           PL_CONSTRUCTED=$(echo "$TODAY_REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
 
-          DAILY_PL=$(jq -n "$PL_SIMPLE + $PL_CONSTRUCTED | round(100)/100 | \"$\" + tostring")
+          DAILY_PL=$(jq -n '
+          ($PL_SIMPLE + $PL_CONSTRUCTED)
+          | (. * 100 | round) / 100
+          | "$" + tostring
+          ' --argjson PL_SIMPLE "$PL_SIMPLE" --argjson PL_CONSTRUCTED "$PL_CONSTRUCTED")
 
           ########################################
           # FALLBACKS + OUTPUT
