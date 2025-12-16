@@ -150,13 +150,28 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
         run: |
-          curl -s -H "Content-Type: application/json" -d "{
-            \"embeds\": [{
-              \"title\": \"📊 Daily Trading Summary – ${{ steps.dates.outputs.pretty }}\",
-              \"fields\": [
-                { \"name\": \"💰 Daily Closed P&L\", \"value\": \"**${{ steps.build.outputs.daily_pl }}**\" },
-                { \"name\": \"✅ Closed Today\", \"value\": ${{ steps.build.outputs.closed_list }} },
-                { \"name\": \"📂 Opened Today\", \"value\": ${{ steps.build.outputs.open_list }} }
-              ]
+          PRETTY='${{ steps.dates.outputs.pretty }}'
+          PL='${{ steps.build.outputs.daily_pl }}'
+          CLOSED='${{ steps.build.outputs.closed_list }}'
+          OPEN='${{ steps.build.outputs.open_list }}'
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "📊 Daily Trading Summary – $PRETTY",
+              "color": 3447003,
+              "fields": [
+                { "name": "💰 Daily Closed P&L", "value": "**$PL**", "inline": false },
+                { "name": "✅ Closed Today", "value": $CLOSED },
+                { "name": "📂 Opened Today", "value": $OPEN }
+              ],
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+              "footer": { "text": "RetireHustler Options Edge" }
             }]
-          }" "$DISCORD_WEBHOOK"
+          }
+          EOF
+          )
+
+          curl -s -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$DISCORD_WEBHOOK"
