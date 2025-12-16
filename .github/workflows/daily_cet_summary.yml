@@ -149,31 +149,40 @@ jobs:
       - name: Send Discord message
         env:
           DISCORD_WEBHOOK: ${{ secrets.DAILY_DISCORD_WEBHOOK_URL }}
+          PRETTY: ${{ steps.dates.outputs.pretty }}
+          DAILY_PL: ${{ steps.build.outputs.daily_pl }}
+          CLOSED_JSON: ${{ steps.build.outputs.closed_list }}
+          OPEN_JSON: ${{ steps.build.outputs.open_list }}
         run: |
           python3 <<'PY'
-          import json, subprocess, os
+          import json, os, subprocess
 
-          pretty = "${{ steps.dates.outputs.pretty }}"
-          pl = "${{ steps.build.outputs.daily_pl }}"
+          pretty = os.environ["PRETTY"]
+          daily_pl = os.environ["DAILY_PL"]
 
-          closed = json.loads('${{ steps.build.outputs.closed_list }}')
-          open_ = json.loads('${{ steps.build.outputs.open_list }}')
+          closed = json.loads(os.environ["CLOSED_JSON"])
+          opened = json.loads(os.environ["OPEN_JSON"])
 
           payload = {
             "embeds": [{
               "title": f"📊 Daily Trading Summary – {pretty}",
               "color": 3447003,
               "fields": [
-                { "name": "💰 Daily Closed P&L", "value": f"**{pl}**", "inline": False },
+                { "name": "💰 Daily Closed P&L", "value": f"**{daily_pl}**", "inline": False },
                 { "name": "✅ Closed Today", "value": closed, "inline": False },
-                { "name": "📂 Opened Today", "value": open_, "inline": False }
+                { "name": "📂 Opened Today", "value": opened, "inline": False }
               ],
               "footer": { "text": "RetireHustler Options Edge" }
             }]
           }
 
           subprocess.run(
-            ["curl", "-s", "-H", "Content-Type: application/json", "-d", json.dumps(payload), os.environ["DISCORD_WEBHOOK"]],
+            [
+              "curl", "-s",
+              "-H", "Content-Type: application/json",
+              "-d", json.dumps(payload),
+              os.environ["DISCORD_WEBHOOK"]
+            ],
             check=True
           )
           PY
