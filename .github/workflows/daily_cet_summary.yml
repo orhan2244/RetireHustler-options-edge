@@ -49,9 +49,6 @@ jobs:
           TODAY='${{ steps.dates.outputs.today }}'
           USER_EMAIL="retirehustler@gmail.com"
 
-          # -----------------------------
-          # Normalize entities
-          # -----------------------------
           normalize () {
             FILE=$1
             if jq -e 'type=="array"' "$FILE" >/dev/null; then
@@ -66,9 +63,9 @@ jobs:
           LEGS=$(normalize tmp/legs.json)
           REALIZED=$(normalize tmp/realized.json)
 
-          # -----------------------------
-          # SIMPLE CLOSED TRADES
-          # -----------------------------
+          ########################################
+          # SIMPLE CLOSED TRADES (UNCHANGED)
+          ########################################
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
             map(select((.close_date | tostring | split("T")[0]) == $d))
           ')
@@ -83,57 +80,69 @@ jobs:
               + " → $" + (.profit_loss|tostring)
           ')
 
-          # -----------------------------
-          # CONSTRUCTED CLOSED LEGS
-          # -----------------------------
+          ########################################
+          # CONSTRUCTED CLOSED LEGS (UPDATED)
+          ########################################
           TODAY_REALIZED=$(echo "$REALIZED" | jq --arg d "$TODAY" '
             map(select(.realization_date == $d))
           ')
 
           CLOSED_CONSTRUCTED_LINES=$(echo "$TODAY_REALIZED" | jq -r \
-            --argjson legs "$LEGS" \
-            --argjson master "$MASTER" '
+            --argjson legs "$LEGS" '
             .[]
             | . as $r
             | ($legs | map(select(.id == $r.trade_leg_id)) | .[0]) as $leg
-            | ($master | map(select(.id == $r.master_trade_id)) | .[0]) as $m
             | (if $leg.direction=="SELL" then "Buy to Close" else "Sell to Close" end) as $action
-            | "\($r.ticker) – \($m.strategy)\n\($action) \($leg.type) \($leg.strike_price) → $\($r.realized_pl)"
+            | ($leg.type | if .=="Call" then "C" else "P" end) as $cp
+            | "\($action) \($leg.strike_price) \($cp) for $\($r.realized_pl) profit"
           ')
 
           CLOSED_LINES=$(printf "%s\n%s" "$CLOSED_SIMPLE_LINES" "$CLOSED_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
           [ -z "$CLOSED_LINES" ] && CLOSED_LINES="(no closed trades today)"
 
-          # -----------------------------
-          # SIMPLE OPEN TRADES
-          # -----------------------------
+          ########################################
+          # SIMPLE OPEN TRADES (UNCHANGED)
+          ########################################
           OPEN_SIMPLE_LINES=$(echo "$ITEMS" | jq --arg d "$TODAY" '
             map(select((.open_date | tostring | split("T")[0]) == $d))
             | .[]
             | (if .direction=="BUY" then "Buy to Open" else "Sell to Open" end)
               + " " + (.quantity|tostring)
               + " " + .ticker
+              + " – " + .type
+              + " " + (.strike_price|tostring)
+              + " Exp " + .expiration_date
           ')
 
-          # -----------------------------
-          # CONSTRUCTED OPEN TRADES
-          # -----------------------------
+          ########################################
+          # CONSTRUCTED OPEN TRADES (UPDATED)
+          ########################################
           OPEN_CONSTRUCTED_LINES=$(echo "$MASTER" | jq --arg d "$TODAY" \
             --argjson legs "$LEGS" '
             map(select((.open_date | tostring | split("T")[0]) == $d))
             | .[]
             | . as $m
             | ($legs | map(select(.master_id == $m.id))) as $legs_for_master
-            | ($legs_for_master | map(.strike_price | tostring) | join("/")) as $strikes
-            | "Open " + $m.ticker + " – " + $m.strategy + " – " + $strikes
+            | ($legs_for_master
+                | map(
+                    (if .direction=="BUY" then "Buy " else "Sell " end)
+                    + (.strike_price|tostring)
+                    + " "
+                    + (if .type=="Call" then "C" else "P" end)
+                  )
+                | join(" / ")
+              ) as $legs_txt
+            | ($legs_for_master | map(.expiration_date) | unique) as $exps
+            | ($exps | if length==1 then .[0] else join(" / ") end) as $exp_txt
+            | "Open " + $m.ticker + " – " + $m.strategy + " – " + $legs_txt + " – Exp " + $exp_txt
           ')
 
           OPEN_LINES=$(printf "%s\n%s" "$OPEN_SIMPLE_LINES" "$OPEN_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
           [ -z "$OPEN_LINES" ] && OPEN_LINES="(no opened trades today)"
 
-          # -----------------------------
+          ########################################
           # DAILY P/L
-          # -----------------------------
+          ########################################
           PL_SIMPLE=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
           PL_CONSTRUCTED=$(echo "$TODAY_REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
 
