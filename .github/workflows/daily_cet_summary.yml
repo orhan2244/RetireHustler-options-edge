@@ -88,14 +88,16 @@ jobs:
           ')
 
           CLOSED_CONSTRUCTED_LINES=$(echo "$TODAY_REALIZED" | jq -r \
-            --argjson legs "$LEGS" '
+            --argjson legs "$LEGS" \
+            --argjson master "$MASTER" '
             .[]
-            | . as $r
-            | ($legs | map(select(.id == $r.trade_leg_id)) | .[0]) as $leg
-            | (if $leg.direction=="SELL" then "Buy to Close" else "Sell to Close" end) as $action
-            | ($leg.type | if .=="Call" then "C" else "P" end) as $cp
-            | "\($action) \($leg.strike_price) \($cp) for $\($r.realized_pl) profit"
-          ')
+              | . as $r
+          | ($legs | map(select(.id == $r.trade_leg_id)) | .[0]) as $leg
+          | ($master | map(select(.id == $r.master_trade_id)) | .[0]) as $m
+          | (if $leg.direction=="SELL" then "Buy to Close" else "Sell to Close" end) as $action
+          | ($leg.type | if .=="Call" then "C" else "P" end) as $cp
+          | "\($r.ticker) – \($m.strategy)\n\($action) \($leg.strike_price) \($cp) for $\($r.realized_pl) profit"
+          '
 
           CLOSED_LINES=$(printf "%s\n%s" "$CLOSED_SIMPLE_LINES" "$CLOSED_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
           [ -z "$CLOSED_LINES" ] && CLOSED_LINES="(no closed trades today)"
