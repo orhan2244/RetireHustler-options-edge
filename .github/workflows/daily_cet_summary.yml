@@ -49,52 +49,43 @@ jobs:
           TODAY='${{ steps.dates.outputs.today }}'
           USER_EMAIL="retirehustler@gmail.com"
 
-          # Normalize trades
-          if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
-            ITEMS=$(cat tmp/trades.json)
-          else
-            ITEMS=$(jq -c '.items // []' tmp/trades.json)
-          fi
+          # -----------------------------
+          # Normalize entities
+          # -----------------------------
+          normalize () {
+            FILE=$1
+            if jq -e 'type=="array"' "$FILE" >/dev/null; then
+              cat "$FILE"
+            else
+              jq -c '.items // []' "$FILE"
+            fi
+          }
 
-          ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
+          ITEMS=$(normalize tmp/trades.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
+          MASTER=$(normalize tmp/master.json)
+          LEGS=$(normalize tmp/legs.json)
+          REALIZED=$(normalize tmp/realized.json)
 
-          ########################################
+          # -----------------------------
           # SIMPLE CLOSED TRADES
-          ########################################
+          # -----------------------------
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.close_date|tostring) | startswith($d)))
+            map(select((.close_date | tostring | split("T")[0]) == $d))
           ')
 
           CLOSED_SIMPLE_LINES=$(echo "$CLOSED_JSON" | jq -r '
             .[]
-            | .prefix =
-              (if .direction=="BUY" then "Sell to Close"
-               elif .direction=="SELL" then "Buy to Close"
-               else "" end)
-            | "\(.prefix) \(.quantity) \(.ticker) – \(.type) – \(.strike_price) → $\(.profit_loss)"
+            | (if .direction=="BUY" then "Sell to Close" else "Buy to Close" end)
+              + " " + (.quantity|tostring)
+              + " " + .ticker
+              + " – " + .type
+              + " " + (.strike_price|tostring)
+              + " → $" + (.profit_loss|tostring)
           ')
 
-          ########################################
+          # -----------------------------
           # CONSTRUCTED CLOSED LEGS
-          ########################################
-          if jq -e 'type=="array"' tmp/realized.json >/dev/null; then
-            REALIZED=$(cat tmp/realized.json)
-          else
-            REALIZED=$(jq -c '.items // []' tmp/realized.json)
-          fi
-
-          if jq -e 'type=="array"' tmp/legs.json >/dev/null; then
-            LEGS=$(cat tmp/legs.json)
-          else
-            LEGS=$(jq -c '.items // []' tmp/legs.json)
-          fi
-
-          if jq -e 'type=="array"' tmp/master.json >/dev/null; then
-            MASTER=$(cat tmp/master.json)
-          else
-            MASTER=$(jq -c '.items // []' tmp/master.json)
-          fi
-
+          # -----------------------------
           TODAY_REALIZED=$(echo "$REALIZED" | jq --arg d "$TODAY" '
             map(select(.realization_date == $d))
           ')
@@ -110,58 +101,39 @@ jobs:
             | "\($r.ticker) – \($m.strategy)\n\($action) \($leg.type) \($leg.strike_price) → $\($r.realized_pl)"
           ')
 
-          ########################################
-          # MERGE CLOSED (THIS WAS MISSING)
-          ########################################
           CLOSED_LINES=$(printf "%s\n%s" "$CLOSED_SIMPLE_LINES" "$CLOSED_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
-
           [ -z "$CLOSED_LINES" ] && CLOSED_LINES="(no closed trades today)"
 
-          ########################################
-          # OPENED SIMPLE TRADES
-          ########################################
-          OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-          map(
-          select(
-          (.open_date | tostring | split("T")[0]) == $d
-          )
-          )
-          ')
-
-          OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
-            .[]
+          # -----------------------------
+          # SIMPLE OPEN TRADES
+          # -----------------------------
+          OPEN_SIMPLE_LINES=$(echo "$ITEMS" | jq --arg d "$TODAY" '
+            map(select((.open_date | tostring | split("T")[0]) == $d))
+            | .[]
             | (if .direction=="BUY" then "Buy to Open" else "Sell to Open" end)
-              + " " + (.quantity|tostring) + " " + .ticker
+              + " " + (.quantity|tostring)
+              + " " + .ticker
           ')
 
-          ########################################
-          # MERGE OPEN SIMPLE + CONSTRUCTED
-          ########################################
+          # -----------------------------
+          # CONSTRUCTED OPEN TRADES
+          # -----------------------------
+          OPEN_CONSTRUCTED_LINES=$(echo "$MASTER" | jq --arg d "$TODAY" \
+            --argjson legs "$LEGS" '
+            map(select((.open_date | tostring | split("T")[0]) == $d))
+            | .[]
+            | . as $m
+            | ($legs | map(select(.master_id == $m.id))) as $legs_for_master
+            | ($legs_for_master | map(.strike_price | tostring) | join("/")) as $strikes
+            | "Open " + $m.ticker + " – " + $m.strategy + " – " + $strikes
+          ')
 
-          OPEN_LINES=$(printf "%s\n%s" "$OPEN_LINES" "$OPEN_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
-    
+          OPEN_LINES=$(printf "%s\n%s" "$OPEN_SIMPLE_LINES" "$OPEN_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
           [ -z "$OPEN_LINES" ] && OPEN_LINES="(no opened trades today)"
 
-
-          ########################################
-          # OPEN CONSTRUCTED TRADES
-          ########################################
-
-          OPEN_MASTER=$(echo "$MASTER" | jq --arg d "$TODAY" '
-          map(select((.open_date|tostring | split("T")[0]) == $d))
-          ')
-          
-          OPEN_CONSTRUCTED_LINES=$(echo "$OPEN_MASTER" | jq -r --argjson legs "$LEGS" '
-          .[]
-          | . as $m
-          | ($legs | map(select(.master_id == $m.id))) as $legs_for_master
-          | ($legs_for_master | map(.strike_price | tostring) | join("/")) as $strikes
-          | "Open " + $m.ticker + " – " + $m.strategy + " – " + $strikes
-          ')
-
-          ########################################
+          # -----------------------------
           # DAILY P/L
-          ########################################
+          # -----------------------------
           PL_SIMPLE=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
           PL_CONSTRUCTED=$(echo "$TODAY_REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
 
@@ -184,32 +156,22 @@ jobs:
           python3 <<'PY'
           import json, os, subprocess
 
-          pretty = os.environ["PRETTY"]
-          daily_pl = os.environ["DAILY_PL"]
-
-          closed = json.loads(os.environ["CLOSED_JSON"])
-          opened = json.loads(os.environ["OPEN_JSON"])
-
           payload = {
             "embeds": [{
-              "title": f"📊 Daily Trading Summary – {pretty}",
+              "title": f"📊 Daily Trading Summary – {os.environ['PRETTY']}",
               "color": 3447003,
               "fields": [
-                { "name": "💰 Daily Closed P&L", "value": f"**{daily_pl}**", "inline": False },
-                { "name": "✅ Closed Today", "value": closed, "inline": False },
-                { "name": "📂 Opened Today", "value": opened, "inline": False }
+                { "name": "💰 Daily Closed P&L", "value": f"**{os.environ['DAILY_PL']}**", "inline": False },
+                { "name": "✅ Closed Today", "value": json.loads(os.environ["CLOSED_JSON"]), "inline": False },
+                { "name": "📂 Opened Today", "value": json.loads(os.environ["OPEN_JSON"]), "inline": False }
               ],
               "footer": { "text": "RetireHustler Options Edge" }
             }]
           }
 
           subprocess.run(
-            [
-              "curl", "-s",
-              "-H", "Content-Type: application/json",
-              "-d", json.dumps(payload),
-              os.environ["DISCORD_WEBHOOK"]
-            ],
+            ["curl", "-s", "-H", "Content-Type: application/json",
+             "-d", json.dumps(payload), os.environ["DISCORD_WEBHOOK"]],
             check=True
           )
           PY
