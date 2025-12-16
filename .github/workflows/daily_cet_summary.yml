@@ -134,7 +134,30 @@ jobs:
               + " " + (.quantity|tostring) + " " + .ticker
           ')
 
+          ########################################
+          # MERGE OPEN SIMPLE + CONSTRUCTED
+          ########################################
+
+          OPEN_LINES=$(printf "%s\n%s" "$OPEN_LINES" "$OPEN_CONSTRUCTED_LINES" | sed '/^[[:space:]]*$/d')
+    
           [ -z "$OPEN_LINES" ] && OPEN_LINES="(no opened trades today)"
+
+
+          ########################################
+          # OPEN CONSTRUCTED TRADES
+          ########################################
+
+          OPEN_MASTER=$(echo "$MASTER" | jq --arg d "$TODAY" '
+          map(select((.open_date|tostring | split("T")[0]) == $d))
+          ')
+          
+          OPEN_CONSTRUCTED_LINES=$(echo "$OPEN_MASTER" | jq -r --argjson legs "$LEGS" '
+          .[]
+          | . as $m
+          | ($legs | map(select(.master_id == $m.id))) as $legs_for_master
+          | ($legs_for_master | map(.strike_price | tostring) | join("/")) as $strikes
+          | "Open " + $m.ticker + " – " + $m.strategy + " – " + $strikes
+          ')
 
           ########################################
           # DAILY P/L
