@@ -2,7 +2,7 @@ name: Daily CET Trading Summary to Discord
 
 on:
   schedule:
-    - cron: '5 21 * * 1-5'   # Runs 22:00 CET / 21:00 UTC all year
+    - cron: '5 21 * * 1-5'
   workflow_dispatch: {}
 
 jobs:
@@ -23,103 +23,119 @@ jobs:
           echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
-      - name: Fetch all trades from Base44
-        id: fetch
+      - name: Fetch data from Base44
         run: |
           mkdir -p tmp
 
-          # FIX 1 — Use correct Base44 header
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=1000" \
             -o tmp/trades.json
 
-          if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
-            echo "❌ Invalid Base44 response:"
-            cat tmp/trades.json
-            exit 1
-          fi
+          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/MasterTrade?limit=1000" \
+            -o tmp/master.json
+
+          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/TradeLeg?limit=2000" \
+            -o tmp/legs.json
+
+          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=2000" \
+            -o tmp/realized.json
 
       - name: Build daily metrics & lists
         id: build
         run: |
           TODAY='${{ steps.dates.outputs.today }}'
-
           USER_EMAIL="retirehustler@gmail.com"
 
-          # Normalize trade list (array or items[])
-          if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
-            ITEMS=$(cat tmp/trades.json)
-          else
-            ITEMS=$(jq -c '.items // []' tmp/trades.json)
-          fi
-
-          # FIX 2 — Filter ONLY your trades
+          ITEMS=$(jq -c '.items // .' tmp/trades.json)
           ITEMS=$(echo "$ITEMS" | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
 
           ########################################
-          # CLOSED trades today
+          # SIMPLE CLOSED TRADES
           ########################################
           CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
             map(select((.close_date|tostring) | startswith($d)))
           ')
 
-          CLOSED_LINES=$(echo "$CLOSED_JSON" | jq -r '
-              .[] 
+          CLOSED_SIMPLE_LINES=$(echo "$CLOSED_JSON" | jq -r '
+            .[]
             | .prefix =
-              (if .direction=="BUY" and .status=="Closed" then "Sell to Close"
-             elif .direction=="SELL" and .status=="Closed" then "Buy to Close"
+              (if .direction=="BUY" then "Sell to Close"
+               elif .direction=="SELL" then "Buy to Close"
                else "" end)
-                | .roi =
-                (if (.return_on_capital!=null)
-                 then (.return_on_capital*100)
-                 elif (.buying_power!=null and .buying_power!=0)
-                   then ((.profit_loss/.buying_power)*100)
-                   else null end)
-                  | .roi = (.roi|tonumber|. * 100 /. * 0 + (. * 100 | floor)/100)
-                  | .profit_fmt = (.profit_loss|tostring|capture("(?<p>[0-9]+(\\.[0-9]{1,2})?)").p)
-                  | .qty = (.quantity|tostring|sub("\\.0$";""))
-                  | .s1 = (.strike_price|tostring|sub("\\.0$";""))
-                  | .s2 = (.strike_price_2|tostring|sub("\\.0$";""))
-                  | .price = (.close_price // .close_value // .close_premium // "N/A")
-                  | .flame = (if (.profit_loss>0) then " 🔥" else "" end)
-                    | "\(.prefix) \(.qty) \(.ticker) - \(.type) - \(.s1)/\(.s2) @ \(.price) for $\(.profit_fmt) profit with \(.roi)% ROI\(.flame)"
-              ')
+            | .qty = (.quantity|tostring|sub("\\.0$";""))
+            | .s1 = (.strike_price|tostring|sub("\\.0$";""))
+            | .s2 = (.strike_price_2|tostring|sub("\\.0$";""))
+            | .price = (.close_price // "N/A")
+            | .pl = (.profit_loss|tostring)
+            | "\(.prefix) \(.qty) \(.ticker) – \(.type) – \(.s1)/\(.s2) @ \(.price) → $\(.pl)"
+          ')
 
           ########################################
-          # OPENED trades today
+          # CONSTRUCTED CLOSED LEGS (AUTHORITATIVE)
+          ########################################
+          REALIZED=$(jq -c '.items // .' tmp/realized.json)
+          LEGS=$(jq -c '.items // .' tmp/legs.json)
+          MASTER=$(jq -c '.items // .' tmp/master.json)
+
+          TODAY_REALIZED=$(echo "$REALIZED" | jq --arg d "$TODAY" '
+            map(select(.realization_date == $d))
+          ')
+
+          CLOSED_CONSTRUCTED_LINES=$(echo "$TODAY_REALIZED" | jq -r \
+            --argjson legs "$LEGS" \
+            --argjson master "$MASTER" '
+            .[]
+            | . as $r
+            | ($legs | map(select(.id == $r.trade_leg_id)) | .[0]) as $leg
+            | ($master | map(select(.id == $r.master_trade_id)) | .[0]) as $m
+            | .action =
+                (if $leg.direction=="SELL"
+                 then "Buy to Close"
+                 else "Sell to Close" end)
+            | "\($r.ticker) – \($m.strategy)\n\(.action) \($leg.type) \($leg.strike_price) → $" + ($r.realized_pl|tostring)
+          ')
+
+          ########################################
+          # MERGE CLOSED
+          ########################################
+          CLOSED_LINES=$(printf "%s\n%s" "$CLOSED_SIMPLE_LINES" "$CLOSED_CONSTRUCTED_LINES")
+
+          ########################################
+          # OPENED SIMPLE TRADES
           ########################################
           OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
             map(select((.open_date|tostring) | startswith($d)))
           ')
 
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
-          .[]
-          | .prefix =
-              (if .direction=="BUY" and .status=="Open" then "Buy to Open"
-               elif .direction=="SELL" and .status=="Open" then "Sell to Open"
-             else "" end)
-            | .qty = (.quantity|tostring|sub("\\.0$";""))
-            | .s1 = (.strike_price|tostring|sub("\\.0$";""))
-            | .s2 = (.strike_price_2|tostring|sub("\\.0$";""))
-            | .price = (.open_price // .open_value // .open_premium // "N/A")
-            | "\(.prefix) \(.qty) \(.ticker) - \(.type) - \(.s1)/\(.s2) @\(.price) Exp \(.expiration_date)"
-            ')
+            .[]
+            | .prefix =
+              (if .direction=="BUY" then "Buy to Open"
+               elif .direction=="SELL" then "Sell to Open"
+               else "" end)
+            | "\(.prefix) \(.quantity) \(.ticker) – \(.type) – \(.strike_price) Exp \(.expiration_date)"
+          ')
 
           ########################################
-          # Daily closed P&L
+          # DAILY P/L
           ########################################
-          DAILY_PL=$(echo "$CLOSED_JSON" | jq -r '[.[].profit_loss // 0] | add // 0 | (. * 100 | round / 100) | "$" + (tostring)')
+          PL_SIMPLE=$(echo "$CLOSED_JSON" | jq '[.[].profit_loss // 0] | add // 0')
+          PL_CONSTRUCTED=$(echo "$TODAY_REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
 
-          # Fallbacks
-          if [ -z "$CLOSED_LINES" ]; then CLOSED_LINES="(no closed trades today)"; fi
-          if [ -z "$OPEN_LINES" ]; then OPEN_LINES="(no opened trades today)"; fi
+          DAILY_PL=$(jq -n "$PL_SIMPLE + $PL_CONSTRUCTED | round(100)/100 | \"$\" + tostring")
 
-          CLOSED_ESCAPED=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
-          OPEN_ESCAPED=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+          ########################################
+          # FALLBACKS + OUTPUT
+          ########################################
+          [ -z "$CLOSED_LINES" ] && CLOSED_LINES="(no closed trades today)"
+          [ -z "$OPEN_LINES" ] && OPEN_LINES="(no opened trades today)"
 
           echo "daily_pl=$DAILY_PL" >> $GITHUB_OUTPUT
-          echo "closed_list=$CLOSED_ESCAPED" >> $GITHUB_OUTPUT
-          echo "open_list=$OPEN_ESCAPED" >> $GITHUB_OUTPUT
+          echo "closed_list=$(printf "%s" "$CLOSED_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" >> $GITHUB_OUTPUT
+          echo "open_list=$(printf "%s" "$OPEN_LINES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" >> $GITHUB_OUTPUT
 
       - name: Send Discord message
         env:
@@ -130,21 +146,16 @@ jobs:
           CLOSED='${{ steps.build.outputs.closed_list }}'
           OPEN='${{ steps.build.outputs.open_list }}'
 
-          PAYLOAD=$(cat <<EOF
-          {
-            "embeds": [{
-              "title": "📊 Daily Trading Summary – $PRETTY ",
-              "color": 3447003,
-              "fields": [
-                { "name": "💰 Daily Closed P&L", "value": "**$PL**", "inline": false },
-                { "name": "✅ Closed Today", "value": $CLOSED },
-                { "name": "📂 Opened Today", "value": $OPEN }
+          curl -s -H "Content-Type: application/json" -d "{
+            \"embeds\": [{
+              \"title\": \"📊 Daily Trading Summary – $PRETTY\",
+              \"color\": 3447003,
+              \"fields\": [
+                { \"name\": \"💰 Daily Closed P&L\", \"value\": \"**$PL**\" },
+                { \"name\": \"✅ Closed Today\", \"value\": $CLOSED },
+                { \"name\": \"📂 Opened Today\", \"value\": $OPEN }
               ],
-              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
-              "footer": { "text": "RetireHustler Options Edge" }
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",
+              \"footer\": { \"text\": \"RetireHustler Options Edge\" }
             }]
-          }
-          EOF
-          )
-
-          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
+          }" "$DISCORD_WEBHOOK"
