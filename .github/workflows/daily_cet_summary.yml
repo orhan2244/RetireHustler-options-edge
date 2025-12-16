@@ -121,7 +121,11 @@ jobs:
           # OPENED SIMPLE TRADES
           ########################################
           OPEN_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.open_date|tostring) | startswith($d)))
+          map(
+          select(
+          (.open_date | tostring | split("T")[0]) == $d
+          )
+          )
           ')
 
           OPEN_LINES=$(echo "$OPEN_JSON" | jq -r '
