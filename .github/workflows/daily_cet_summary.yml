@@ -106,14 +106,20 @@ jobs:
           # SIMPLE OPEN TRADES (UNCHANGED)
           ########################################
           OPEN_SIMPLE_LINES=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.open_date | tostring | split("T")[0]) == $d))
-            | .[]
-            | (if .direction=="BUY" then "Buy to Open" else "Sell to Open" end)
-              + " " + (.quantity|tostring)
-              + " " + .ticker
-              + " – " + .type
-              + " " + (.strike_price|tostring)
-              + " Exp " + .expiration_date
+          map(select((.open_date | tostring | split("T")[0]) == $d))
+          | .[]
+          | (if .direction=="BUY" then "Buy to Open" else "Sell to Open" end) as $action
+          | (.quantity|tostring) as $qty
+          | .ticker as $ticker
+          | .type as $type
+          | (
+          if ($type=="Call" or $type=="Put")
+          then (.strike_price|tostring)
+          else (.strike_price|tostring) + "/" + (.strike_price_2|tostring)
+          end
+          ) as $strikes
+          | $action + " " + $qty + " " + $ticker + " – " + $type + " " + $strikes
+          + " Exp " + (.expiration_date|tostring)
           ')
 
           ########################################
