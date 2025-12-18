@@ -71,13 +71,20 @@ jobs:
           ')
 
           CLOSED_SIMPLE_LINES=$(echo "$CLOSED_JSON" | jq -r '
-            .[]
-            | (if .direction=="BUY" then "Sell to Close" else "Buy to Close" end)
-              + " " + (.quantity|tostring)
-              + " " + .ticker
-              + " – " + .type
-              + " " + (.strike_price|tostring)
-              + " → $" + (.profit_loss|tostring)
+          .[]
+          | (if .direction=="BUY" then "Sell to Close" else "Buy to Close" end) as $action
+          | (.quantity|tostring) as $qty
+          | .ticker as $ticker
+          | .type as $type
+          | (
+            if ($type=="Call" or $type=="Put")
+            then (.strike_price|tostring)
+            else (.strike_price|tostring) + "/" + (.strike_price_2|tostring)
+            end
+            ) as $strikes
+          | $action + " " + $qty + " " + $ticker
+          + " – " + $type + " " + $strikes
+          + " → $" + (.profit_loss|tostring)
           ')
 
           ########################################
