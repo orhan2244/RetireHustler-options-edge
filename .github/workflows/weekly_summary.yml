@@ -125,13 +125,13 @@ jobs:
           # SUMMARY (MATCH OLD STYLE)
           ########################################
           SUMMARY=$(printf \
-"📅 %s
-📈 Weekly P&L: \$%s
-💼 Number of Closed Trades: %s
-🏆 Best Trade of the Week: %s
-📉 Worst Trade of the Week: %s
-💰 Cumulative P&L: \$%s
-📊 Cumulative Closed Trades: %s" \
+          "📅 %s
+          📈 Weekly P&L: \$%s
+          💼 Number of Closed Trades: %s
+          🏆 Best Trade of the Week: %s
+          📉 Worst Trade of the Week: %s
+          💰 Cumulative P&L: \$%s
+          📊 Cumulative Closed Trades: %s" \
             "$PRETTY_RANGE" \
             "$WEEK_PL_FMT" \
             "$WEEK_COUNT" \
