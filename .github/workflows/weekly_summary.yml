@@ -2,8 +2,7 @@ name: Weekly Trading Summary to Discord
 
 on:
   schedule:
-    # Every Friday 22:00 CET (21:00 UTC)
-    - cron: '0 21 * * 5'
+    - cron: '0 21 * * 5'   # Friday 22:00 CET
   workflow_dispatch: {}
 
 jobs:
@@ -26,8 +25,7 @@ jobs:
           echo "week_start=$WEEK_START" >> $GITHUB_OUTPUT
           echo "pretty_range=$PRETTY_RANGE" >> $GITHUB_OUTPUT
 
-      - name: Fetch all trades from Base44
-        id: fetch
+      - name: Fetch data from Base44
         run: |
           mkdir -p tmp
 
@@ -35,113 +33,131 @@ jobs:
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=1000" \
             -o tmp/trades.json
 
-          if ! jq -e 'type=="array" or (type=="object" and has("items"))' tmp/trades.json > /dev/null; then
-            echo "Invalid Base44 response:"
-            cat tmp/trades.json
-            exit 1
-          fi
+          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=2000" \
+            -o tmp/realized.json
 
       - name: Build weekly and cumulative metrics
         id: build
         run: |
           set -euo pipefail
+
           WEEK_START='${{ steps.dates.outputs.week_start }}'
           TODAY='${{ steps.dates.outputs.today }}'
           PRETTY_RANGE='${{ steps.dates.outputs.pretty_range }}'
-
-          # 👇 your email (or move to a secret if you prefer)
           USER_EMAIL="retirehustler@gmail.com"
 
-          # Normalize items (array or {items: []})
-          if jq -e 'type=="array"' tmp/trades.json >/dev/null; then
-            ITEMS=$(cat tmp/trades.json)
-          else
-            ITEMS=$(jq -c '.items // []' tmp/trades.json)
-          fi
+          normalize () {
+            FILE=$1
+            if jq -e 'type=="array"' "$FILE" >/dev/null; then
+              cat "$FILE"
+            else
+              jq -c '.items // []' "$FILE"
+            fi
+          }
 
-          # Keep created_by so we can filter on it
-          NORM=$(echo "$ITEMS" | jq '
-            map({
-              ticker,
-              type,
-              created_by,
-              status: ((.status // "" | tostring) | ascii_upcase),
-              close_date: ((.close_date // "" | tostring) | .[0:10]),
-              profit_loss: (.profit_loss // 0)
-            })
-          ')
+          TRADES=$(normalize tmp/trades.json | jq 'map(select(.created_by=="'"$USER_EMAIL"'"))')
+          REALIZED=$(normalize tmp/realized.json)
 
-          # Weekly closed trades for THIS user only
-          WEEK_JSON=$(echo "$NORM" | jq \
+          ########################################
+          # SIMPLE CLOSED (WEEK)
+          ########################################
+          SIMPLE_WEEK=$(echo "$TRADES" | jq \
             --arg s "$WEEK_START" \
-            --arg e "$TODAY" \
-            --arg u "$USER_EMAIL" '
+            --arg e "$TODAY" '
             map(select(
-              .created_by == $u and
-              .status == "CLOSED" and
-              .close_date >= $s and
-              .close_date <= $e
+              (.status | ascii_upcase) == "CLOSED" and
+              (.close_date | tostring | .[0:10]) >= $s and
+              (.close_date | tostring | .[0:10]) <= $e
             ))
           ')
 
-          WEEK_PL=$(echo "$WEEK_JSON" | jq '[.[].profit_loss] | add // 0' | xargs printf "%.1f")
-          WEEK_COUNT=$(echo "$WEEK_JSON" | jq 'length')
+          SIMPLE_WEEK_PL=$(echo "$SIMPLE_WEEK" | jq '[.[].profit_loss // 0] | add // 0')
+          SIMPLE_WEEK_COUNT=$(echo "$SIMPLE_WEEK" | jq 'length')
 
-          TOP_WIN=$(echo "$WEEK_JSON" | jq -r '
-            if length>0
-            then max_by(.profit_loss) | "\(.ticker) +\(.profit_loss|tonumber|round|tostring)"
-            else "N/A"
-            end')
-
-          TOP_LOSS=$(echo "$WEEK_JSON" | jq -r '
-            if length>0
-            then min_by(.profit_loss) | "\(.ticker) \(.profit_loss|tonumber|round|tostring)"
-            else "N/A"
-            end')
-
-          # Cumulative closed trades for THIS user only
-          TOTAL_PL=$(echo "$NORM" | jq --arg u "$USER_EMAIL" '
-            map(select(.created_by == $u and .status == "CLOSED"))
-            | [.[].profit_loss] | add // 0
-          ' | xargs printf "%.1f")
-
-          TOTAL_COUNT=$(echo "$NORM" | jq --arg u "$USER_EMAIL" '
-            map(select(.created_by == $u and .status == "CLOSED")) | length
+          ########################################
+          # CONSTRUCTED CLOSED LEGS (WEEK)
+          ########################################
+          CONSTRUCTED_WEEK=$(echo "$REALIZED" | jq \
+            --arg s "$WEEK_START" \
+            --arg e "$TODAY" '
+            map(select(
+              .realization_date >= $s and
+              .realization_date <= $e
+            ))
           ')
+
+          CONSTRUCTED_WEEK_PL=$(echo "$CONSTRUCTED_WEEK" | jq '[.[].realized_pl // 0] | add // 0')
+          CONSTRUCTED_WEEK_COUNT=$(echo "$CONSTRUCTED_WEEK" | jq 'length')
+
+          ########################################
+          # TOTALS (ALL TIME)
+          ########################################
+          TOTAL_SIMPLE_PL=$(echo "$TRADES" | jq '
+            map(select((.status | ascii_upcase)=="CLOSED"))
+            | [.[].profit_loss // 0] | add // 0
+          ')
+
+          TOTAL_CONSTRUCTED_PL=$(echo "$REALIZED" | jq '
+            [.[].realized_pl // 0] | add // 0
+          ')
+
+          TOTAL_PL=$(jq -n \
+            --argjson a "$TOTAL_SIMPLE_PL" \
+            --argjson b "$TOTAL_CONSTRUCTED_PL" \
+            '($a + $b)')
+
+          ########################################
+          # SUMMARY
+          ########################################
+          WEEK_PL=$(jq -n \
+            --argjson a "$SIMPLE_WEEK_PL" \
+            --argjson b "$CONSTRUCTED_WEEK_PL" \
+            '($a + $b) | (. * 100 | round) / 100')
+
+          WEEK_COUNT=$((SIMPLE_WEEK_COUNT + CONSTRUCTED_WEEK_COUNT))
+
+          TOTAL_PL_FMT=$(printf "%.1f" "$TOTAL_PL")
+          WEEK_PL_FMT=$(printf "%.1f" "$WEEK_PL")
 
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY="No closed trades this week 💤"
           else
-            SUMMARY=$(printf "📅 %s\n📈 Weekly P&L : \$%s\n💼 Number of Closed Trades : %s\n🏆 Best Trade of the Week : %s\n💰 Cumulative P&L : \$%s\n📊 Cumulative Closed Trades : %s" \
-              "$PRETTY_RANGE" "$WEEK_PL" "$WEEK_COUNT" "$TOP_WIN" "$TOTAL_PL" "$TOTAL_COUNT")
+            SUMMARY=$(printf \
+"📅 %s
+📈 Weekly P&L: \$%s
+💼 Closed trades (incl. legs): %s
+💰 Cumulative P&L: \$%s" \
+              "$PRETTY_RANGE" \
+              "$WEEK_PL_FMT" \
+              "$WEEK_COUNT" \
+              "$TOTAL_PL_FMT")
           fi
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
-          echo "week_pl=$WEEK_PL" >> $GITHUB_OUTPUT
-          echo "total_pl=$TOTAL_PL" >> $GITHUB_OUTPUT
 
       - name: Send Weekly Summary to Discord
         env:
           DISCORD_WEBHOOK: ${{ secrets.WEEKLY_DISCORD_WEBHOOK_URL }}
         run: |
           SUMMARY='${{ steps.build.outputs.summary }}'
-          WEEK_PL='${{ steps.build.outputs.week_pl }}'
-          TOTAL_PL='${{ steps.build.outputs.total_pl }}'
 
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
-              "title": "📊 Weekly Trading Recap — Week Ending $(date +%b\ %d, %Y)",
+              "title": "📊 Weekly Trading Recap",
               "color": 5814783,
               "fields": [
                 { "name": "", "value": $SUMMARY }
               ],
-              "footer": { "text": "RetireHustler Options Edge • $(date +'%H:%M %Z')" },
+              "footer": { "text": "RetireHustler Options Edge • Weekly" },
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
             }]
           }
           EOF
           )
 
-          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
+          curl -s -H "Content-Type: application/json" \
+               -d "$PAYLOAD" "$DISCORD_WEBHOOK" \
+               -o /dev/null -w "%{http_code}\n"
