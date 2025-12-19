@@ -124,10 +124,10 @@ jobs:
             SUMMARY="No closed trades this week 💤"
           else
             SUMMARY=$(printf \
-"📅 %s
-📈 Weekly P&L: \$%s
-💼 Closed trades (incl. legs): %s
-💰 Cumulative P&L: \$%s" \
+          "📅 %s
+          📈 Weekly P&L: \$%s
+          💼 Closed trades (incl. legs): %s
+          💰 Cumulative P&L: \$%s" \
               "$PRETTY_RANGE" \
               "$WEEK_PL_FMT" \
               "$WEEK_COUNT" \
