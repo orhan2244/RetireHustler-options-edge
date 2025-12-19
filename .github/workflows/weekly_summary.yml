@@ -60,18 +60,18 @@ jobs:
           REALIZED=$(normalize tmp/realized.json | jq --arg u "$USER_EMAIL" 'map(select((.created_by? // $u) == $u))')
 
           ########################################
-          # SIMPLE CLOSED (WEEK)
+          # SIMPLE CLOSED TRADES (ALL CLOSED)
+          # NOTE: no date filter → fixes missing rolled losses
           ########################################
-          SIMPLE_WEEK=$(echo "$TRADES" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
+          SIMPLE_CLOSED=$(echo "$TRADES" | jq '
             map(select(
               ((.status // "" | ascii_upcase) | startswith("CLOSED")) and
-              ((.close_date // "" | tostring | split("T")[0]) >= $s) and
-              ((.close_date // "" | tostring | split("T")[0]) <= $e)
+              (.profit_loss != null)
             ))
           ')
 
-          SIMPLE_WEEK_PL=$(echo "$SIMPLE_WEEK" | jq '[.[].profit_loss // 0] | add // 0')
-          SIMPLE_WEEK_COUNT=$(echo "$SIMPLE_WEEK" | jq 'length')
+          SIMPLE_WEEK_PL=$(echo "$SIMPLE_CLOSED" | jq '[.[].profit_loss // 0] | add // 0')
+          SIMPLE_WEEK_COUNT=$(echo "$SIMPLE_CLOSED" | jq 'length')
 
           ########################################
           # CONSTRUCTED CLOSED LEGS (WEEK)
@@ -95,11 +95,8 @@ jobs:
           ########################################
           # CUMULATIVE TOTALS
           ########################################
-          TOTAL_SIMPLE=$(echo "$TRADES" | jq '
-            map(select(((.status // "" | ascii_upcase) | startswith("CLOSED"))))
-          ')
-          TOTAL_SIMPLE_PL=$(echo "$TOTAL_SIMPLE" | jq '[.[].profit_loss // 0] | add // 0')
-          TOTAL_SIMPLE_COUNT=$(echo "$TOTAL_SIMPLE" | jq 'length')
+          TOTAL_SIMPLE_PL="$SIMPLE_WEEK_PL"
+          TOTAL_SIMPLE_COUNT="$SIMPLE_WEEK_COUNT"
 
           TOTAL_CONSTRUCTED_PL=$(echo "$REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
           TOTAL_CONSTRUCTED_COUNT=$(echo "$REALIZED" | jq 'length')
@@ -108,9 +105,9 @@ jobs:
           TOTAL_COUNT=$((TOTAL_SIMPLE_COUNT + TOTAL_CONSTRUCTED_COUNT))
 
           ########################################
-          # BEST / WORST (ACROSS TRADES + LEGS)
+          # BEST / WORST (TRADES + LEGS)
           ########################################
-          WEEK_ITEMS=$(jq -n --argjson s "$SIMPLE_WEEK" --argjson c "$CONSTRUCTED_WEEK" '
+          WEEK_ITEMS=$(jq -n --argjson s "$SIMPLE_CLOSED" --argjson c "$CONSTRUCTED_WEEK" '
             ($s | map({ticker, pl:(.profit_loss // 0)})) +
             ($c | map({ticker, pl:(.realized_pl // 0)}))
           ')
@@ -127,13 +124,21 @@ jobs:
           ########################################
           # SUMMARY (MATCH OLD STYLE)
           ########################################
-          if [ "$WEEK_COUNT" -eq 0 ]; then
-            SUMMARY=$(printf "📅 %s\n📉 Weekly P&L: \$0.0\n💼 Number of Closed Trades: 0\n🏆 Best Trade of the Week: N/A\n💰 Cumulative P&L: \$%s\n📊 Cumulative Closed Trades: %s" \
-              "$PRETTY_RANGE" "$TOTAL_PL_FMT" "$TOTAL_COUNT")
-          else
-            SUMMARY=$(printf "📅 %s\n📈 Weekly P&L: \$%s\n💼 Number of Closed Trades: %s\n🏆 Best Trade of the Week: %s\n📉 Worst Trade of the Week: %s\n💰 Cumulative P&L: \$%s\n📊 Cumulative Closed Trades: %s" \
-              "$PRETTY_RANGE" "$WEEK_PL_FMT" "$WEEK_COUNT" "$TOP_WIN" "$TOP_LOSS" "$TOTAL_PL_FMT" "$TOTAL_COUNT")
-          fi
+          SUMMARY=$(printf \
+"📅 %s
+📈 Weekly P&L: \$%s
+💼 Number of Closed Trades: %s
+🏆 Best Trade of the Week: %s
+📉 Worst Trade of the Week: %s
+💰 Cumulative P&L: \$%s
+📊 Cumulative Closed Trades: %s" \
+            "$PRETTY_RANGE" \
+            "$WEEK_PL_FMT" \
+            "$WEEK_COUNT" \
+            "$TOP_WIN" \
+            "$TOP_LOSS" \
+            "$TOTAL_PL_FMT" \
+            "$TOTAL_COUNT")
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
