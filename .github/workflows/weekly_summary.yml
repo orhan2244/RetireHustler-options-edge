@@ -38,7 +38,7 @@ jobs:
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=8000" \
             -o tmp/realized.json
 
-      - name: Build weekly and cumulative metrics
+      - name: Build weekly summary
         id: build
         run: |
           set -euo pipefail
@@ -56,39 +56,26 @@ jobs:
             fi
           }
 
+          # User-filtered datasets
           TRADES=$(normalize tmp/trades.json | jq --arg u "$USER_EMAIL" 'map(select(.created_by == $u))')
-
-          # RealizedLegProfit: filter by created_by if it exists, otherwise keep entries
-          REALIZED=$(normalize tmp/realized.json | jq --arg u "$USER_EMAIL" '
-            map(select((.created_by? // $u) == $u))
-          ')
+          REALIZED=$(normalize tmp/realized.json | jq --arg u "$USER_EMAIL" 'map(select((.created_by? // $u) == $u))')
 
           ########################################
-          # SIMPLE CLOSED TRADES (WEEK)
-          # - include Closed, Closed (Rolled), etc: startswith("CLOSED")
-          # - robust date extraction: try several possible keys, take first 10 chars
+          # SIMPLE CLOSED TRADES (ALL CLOSED)
+          # NOTE: NO DATE FILTER → includes rolled losses
           ########################################
-          SIMPLE_WEEK=$(echo "$TRADES" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
-            map(
-              . as $t
-              | ($t.status // "" | tostring | ascii_upcase) as $st
-              | (
-                  ($t.close_date // $t.closed_date // $t.closeDate // $t.close_date_local // "") 
-                  | tostring 
-                  | .[0:10]
-                ) as $cd
-              | select(
-                  ($st | startswith("CLOSED")) and
-                  ($cd >= $s) and ($cd <= $e)
-                )
-            )
+          SIMPLE_WEEK=$(echo "$TRADES" | jq '
+            map(select(
+              ((.status // "" | tostring | ascii_upcase) | startswith("CLOSED")) and
+              (.profit_loss != null)
+            ))
           ')
 
           SIMPLE_WEEK_PL=$(echo "$SIMPLE_WEEK" | jq '[.[].profit_loss // 0] | add // 0')
           SIMPLE_WEEK_COUNT=$(echo "$SIMPLE_WEEK" | jq 'length')
 
           ########################################
-          # CONSTRUCTED CLOSED LEGS (WEEK) — authoritative
+          # CONSTRUCTED CLOSED LEGS (THIS WEEK ONLY)
           ########################################
           CONSTRUCTED_WEEK=$(echo "$REALIZED" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
             map(select(.realization_date >= $s and .realization_date <= $e))
@@ -102,11 +89,10 @@ jobs:
           ########################################
           WEEK_PL=$(jq -n --argjson a "$SIMPLE_WEEK_PL" --argjson b "$CONSTRUCTED_WEEK_PL" '($a + $b)')
           WEEK_COUNT=$((SIMPLE_WEEK_COUNT + CONSTRUCTED_WEEK_COUNT))
-
           WEEK_PL_FMT=$(printf "%.1f" "$WEEK_PL")
 
           ########################################
-          # BEST TRADE OF THE WEEK (across simple trades + constructed legs)
+          # BEST TRADE OF THE WEEK (WEEKLY ONLY)
           ########################################
           WEEK_ITEMS=$(jq -n --argjson s "$SIMPLE_WEEK" --argjson c "$CONSTRUCTED_WEEK" '
             ($s | map({ticker, pl:(.profit_loss // 0)})) +
@@ -135,31 +121,24 @@ jobs:
 
           TOTAL_PL=$(jq -n --argjson a "$TOTAL_SIMPLE_PL" --argjson b "$TOTAL_CONSTRUCTED_PL" '($a + $b)')
           TOTAL_COUNT=$((TOTAL_SIMPLE_COUNT + TOTAL_CONSTRUCTED_COUNT))
-
           TOTAL_PL_FMT=$(printf "%.1f" "$TOTAL_PL")
 
           ########################################
-          # SUMMARY (matches your old style; NO worst trade)
+          # SUMMARY (MATCHES YOUR PREFERRED FORMAT)
           ########################################
-          if [ "$WEEK_COUNT" -eq 0 ]; then
-            SUMMARY=$(printf \
-          "📅 %s
-          📉 Weekly P&L: \$0.0
-          💼 Number of Closed Trades: 0
-          🏆 Best Trade of the Week: N/A
-          💰 Cumulative P&L: \$%s
-          📊 Cumulative Closed Trades: %s" \
-              "$PRETTY_RANGE" "$TOTAL_PL_FMT" "$TOTAL_COUNT")
-          else
-            SUMMARY=$(printf \
+          SUMMARY=$(printf \
           "📅 %s
           📈 Weekly P&L: \$%s
           💼 Number of Closed Trades: %s
           🏆 Best Trade of the Week: %s
           💰 Cumulative P&L: \$%s
           📊 Cumulative Closed Trades: %s" \
-              "$PRETTY_RANGE" "$WEEK_PL_FMT" "$WEEK_COUNT" "$BEST_TRADE" "$TOTAL_PL_FMT" "$TOTAL_COUNT")
-          fi
+            "$PRETTY_RANGE" \
+            "$WEEK_PL_FMT" \
+            "$WEEK_COUNT" \
+            "$BEST_TRADE" \
+            "$TOTAL_PL_FMT" \
+            "$TOTAL_COUNT")
 
           ESCAPED=$(printf "%s" "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
           echo "summary=$ESCAPED" >> $GITHUB_OUTPUT
@@ -178,7 +157,7 @@ jobs:
               "fields": [
                 { "name": "", "value": $SUMMARY }
               ],
-              "footer": { "text": "RetireHustler Options Edge • Weekly • $(date +'%H:%M %Z')" },
+              "footer": { "text": "RetireHustler Options Edge • Weekly" },
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
             }]
           }
