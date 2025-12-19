@@ -38,7 +38,7 @@ jobs:
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=5000" \
             -o tmp/realized.json
 
-      - name: Build weekly + cumulative metrics (includes constructed legs)
+      - name: Build weekly summary
         id: build
         run: |
           set -euo pipefail
@@ -49,26 +49,22 @@ jobs:
           USER_EMAIL="retirehustler@gmail.com"
 
           normalize () {
-            FILE=$1
-            if jq -e 'type=="array"' "$FILE" >/dev/null; then
-              cat "$FILE"
+            if jq -e 'type=="array"' "$1" >/dev/null; then
+              cat "$1"
             else
-              jq -c '.items // []' "$FILE"
+              jq -c '.items // []' "$1"
             fi
           }
 
           TRADES=$(normalize tmp/trades.json | jq --arg u "$USER_EMAIL" 'map(select(.created_by == $u))')
-          REALIZED=$(normalize tmp/realized.json)
+          REALIZED=$(normalize tmp/realized.json | jq --arg u "$USER_EMAIL" 'map(select((.created_by? // $u) == $u))')
 
           ########################################
-          # SIMPLE CLOSED TRADES (WEEK)
-          # IMPORTANT: include Closed (Rolled) etc by startswith("CLOSED")
+          # SIMPLE CLOSED (WEEK)
           ########################################
-          SIMPLE_WEEK=$(echo "$TRADES" | jq \
-            --arg s "$WEEK_START" \
-            --arg e "$TODAY" '
+          SIMPLE_WEEK=$(echo "$TRADES" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
             map(select(
-              ((.status // "" | tostring | ascii_upcase) | startswith("CLOSED")) and
+              ((.status // "" | ascii_upcase) | startswith("CLOSED")) and
               ((.close_date // "" | tostring | split("T")[0]) >= $s) and
               ((.close_date // "" | tostring | split("T")[0]) <= $e)
             ))
@@ -79,16 +75,11 @@ jobs:
 
           ########################################
           # CONSTRUCTED CLOSED LEGS (WEEK)
-          # Filter by created_by if Base44 includes it, otherwise keep all
           ########################################
-          CONSTRUCTED_WEEK=$(echo "$REALIZED" | jq \
-            --arg s "$WEEK_START" \
-            --arg e "$TODAY" \
-            --arg u "$USER_EMAIL" '
+          CONSTRUCTED_WEEK=$(echo "$REALIZED" | jq --arg s "$WEEK_START" --arg e "$TODAY" '
             map(select(
-              (.realization_date >= $s) and
-              (.realization_date <= $e) and
-              ((.created_by? // $u) == $u)
+              .realization_date >= $s and
+              .realization_date <= $e
             ))
           ')
 
@@ -96,77 +87,45 @@ jobs:
           CONSTRUCTED_WEEK_COUNT=$(echo "$CONSTRUCTED_WEEK" | jq 'length')
 
           ########################################
-          # WEEK TOTALS
+          # WEEK TOTAL
           ########################################
-          WEEK_PL=$(jq -n --argjson a "$SIMPLE_WEEK_PL" --argjson b "$CONSTRUCTED_WEEK_PL" '
-            ($a + $b)
-          ')
+          WEEK_PL=$(jq -n --argjson a "$SIMPLE_WEEK_PL" --argjson b "$CONSTRUCTED_WEEK_PL" '($a + $b)')
           WEEK_COUNT=$((SIMPLE_WEEK_COUNT + CONSTRUCTED_WEEK_COUNT))
 
           ########################################
-          # CUMULATIVE TOTALS (ALL TIME)
+          # CUMULATIVE TOTALS
           ########################################
           TOTAL_SIMPLE=$(echo "$TRADES" | jq '
-            map(select(((.status // "" | tostring | ascii_upcase) | startswith("CLOSED"))))
+            map(select(((.status // "" | ascii_upcase) | startswith("CLOSED"))))
           ')
           TOTAL_SIMPLE_PL=$(echo "$TOTAL_SIMPLE" | jq '[.[].profit_loss // 0] | add // 0')
           TOTAL_SIMPLE_COUNT=$(echo "$TOTAL_SIMPLE" | jq 'length')
 
-          TOTAL_CONSTRUCTED=$(echo "$REALIZED" | jq --arg u "$USER_EMAIL" '
-            map(select((.created_by? // $u) == $u))
-          ')
-          TOTAL_CONSTRUCTED_PL=$(echo "$TOTAL_CONSTRUCTED" | jq '[.[].realized_pl // 0] | add // 0')
-          TOTAL_CONSTRUCTED_COUNT=$(echo "$TOTAL_CONSTRUCTED" | jq 'length')
+          TOTAL_CONSTRUCTED_PL=$(echo "$REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
+          TOTAL_CONSTRUCTED_COUNT=$(echo "$REALIZED" | jq 'length')
 
-          TOTAL_PL=$(jq -n --argjson a "$TOTAL_SIMPLE_PL" --argjson b "$TOTAL_CONSTRUCTED_PL" '
-            ($a + $b)
-          ')
+          TOTAL_PL=$(jq -n --argjson a "$TOTAL_SIMPLE_PL" --argjson b "$TOTAL_CONSTRUCTED_PL" '($a + $b)')
           TOTAL_COUNT=$((TOTAL_SIMPLE_COUNT + TOTAL_CONSTRUCTED_COUNT))
 
           ########################################
-          # BEST / WORST of the week (across trades + legs)
+          # BEST / WORST (ACROSS TRADES + LEGS)
           ########################################
-          WEEK_ITEMS=$(jq -n \
-            --argjson s "$SIMPLE_WEEK" \
-            --argjson c "$CONSTRUCTED_WEEK" '
-            ($s | map({ticker, pl:(.profit_loss // 0), kind:"Trade"})) +
-            ($c | map({ticker, pl:(.realized_pl // 0), kind:"Leg"}))
+          WEEK_ITEMS=$(jq -n --argjson s "$SIMPLE_WEEK" --argjson c "$CONSTRUCTED_WEEK" '
+            ($s | map({ticker, pl:(.profit_loss // 0)})) +
+            ($c | map({ticker, pl:(.realized_pl // 0)}))
           ')
 
-          TOP_WIN=$(echo "$WEEK_ITEMS" | jq -r '
-            if length>0 then
-              max_by(.pl) | "\(.ticker) +\(.pl|tostring)"
-            else
-              "N/A"
-            end
-          ')
-
-          TOP_LOSS=$(echo "$WEEK_ITEMS" | jq -r '
-            if length>0 then
-              min_by(.pl) | "\(.ticker) \(.pl|tostring)"
-            else
-              "N/A"
-            end
-          ')
+          TOP_WIN=$(echo "$WEEK_ITEMS" | jq -r 'if length>0 then max_by(.pl) | "\(.ticker) +\(.pl)" else "N/A" end')
+          TOP_LOSS=$(echo "$WEEK_ITEMS" | jq -r 'if length>0 then min_by(.pl) | "\(.ticker) \(.pl)" else "N/A" end')
 
           ########################################
-          # FORMAT numbers (1 decimal like your old post)
+          # FORMAT
           ########################################
-          WEEK_PL_FMT=$(python3 - <<PY
-          import os
-          v=float(os.environ["WEEK_PL"])
-          print(f"{v:.1f}")
-          PY
-          )
-          TOTAL_PL_FMT=$(python3 - <<PY
-          import os
-          v=float(os.environ["TOTAL_PL"])
-          print(f"{v:.1f}")
-          PY
-          )
+          WEEK_PL_FMT=$(printf "%.1f" "$WEEK_PL")
+          TOTAL_PL_FMT=$(printf "%.1f" "$TOTAL_PL")
 
           ########################################
-          # BUILD SUMMARY (match your old style)
+          # SUMMARY (MATCH OLD STYLE)
           ########################################
           if [ "$WEEK_COUNT" -eq 0 ]; then
             SUMMARY=$(printf "📅 %s\n📉 Weekly P&L: \$0.0\n💼 Number of Closed Trades: 0\n🏆 Best Trade of the Week: N/A\n💰 Cumulative P&L: \$%s\n📊 Cumulative Closed Trades: %s" \
@@ -193,11 +152,13 @@ jobs:
               "fields": [
                 { "name": "", "value": $SUMMARY }
               ],
-              "footer": { "text": "RetireHustler Options Edge • Weekly • $(date +'%H:%M %Z')" },
+              "footer": { "text": "RetireHustler Options Edge • Weekly" },
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
             }]
           }
           EOF
           )
 
-          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" -o /dev/null -w "%{http_code}\n"
+          curl -s -H "Content-Type: application/json" \
+               -d "$PAYLOAD" "$DISCORD_WEBHOOK" \
+               -o /dev/null -w "%{http_code}\n"
