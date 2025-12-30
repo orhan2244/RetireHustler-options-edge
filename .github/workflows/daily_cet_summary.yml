@@ -59,7 +59,7 @@ jobs:
           }
 
           ITEMS=$(normalize tmp/trades.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
-          MASTER=$(normalize tmp/master.json)
+          MASTER=$(normalize tmp/master.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
           LEGS=$(normalize tmp/legs.json)
           REALIZED=$(normalize tmp/realized.json)
 
