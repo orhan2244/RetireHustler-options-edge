@@ -1,9 +1,9 @@
 name: Weekly Trading Summary to Discord
 
 on:
-  schedule:
+  # schedule:
     # Every Friday 22:00 CET (21:00 UTC)
-    - cron: '0 21 * * 5'
+    # - cron: '0 21 * * 5'
   workflow_dispatch: {}
 
 jobs:
