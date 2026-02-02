@@ -18,9 +18,9 @@ jobs:
       - name: Get today's date (CET/CEST)
         id: dates
         run: |
-          YESTERDAY=$(date -d "yesterday" +"%Y-%m-%d")
-          PRETTY=$(date -d "yesterday" +"%b %d, %Y")
-          echo "today=$YESTERDAY" >> $GITHUB_OUTPUT
+          TODAY=$(date +"%Y-%m-%d")
+          PRETTY=$(date +"%b %d, %Y")
+          echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
       - name: Fetch data from Base44
