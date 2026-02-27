@@ -28,19 +28,19 @@ jobs:
           mkdir -p tmp
 
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=5000" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=999999" \
             -o tmp/trades.json
 
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/MasterTrade?limit=5000" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/MasterTrade?limit=999999" \
             -o tmp/master.json
 
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/TradeLeg?limit=5000" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/TradeLeg?limit=999999" \
             -o tmp/legs.json
 
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=5000" \
+            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=999999" \
             -o tmp/realized.json
 
       - name: Build daily metrics & lists
