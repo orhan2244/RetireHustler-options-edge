@@ -18,8 +18,6 @@ jobs:
       - name: Get today's date (CET/CEST)
         id: dates
         run: |
-          # TODAY=$(date +"%Y-%m-%d")
-          # PRETTY=$(date +"%b %d, %Y")
           TODAY=$(date -d "yesterday" +"%Y-%m-%d")
           PRETTY=$(date -d "yesterday" +"%b %d, %Y")
           echo "today=$TODAY" >> $GITHUB_OUTPUT
