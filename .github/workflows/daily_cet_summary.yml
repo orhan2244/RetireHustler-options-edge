@@ -109,7 +109,7 @@ jobs:
           # CONSTRUCTED CLOSED LEGS (UPDATED)
           ########################################
           TODAY_REALIZED=$(echo "$REALIZED" | jq --arg d "$TODAY" '
-            map(select(.realization_date == $d))
+          map(select((.realization_date | tostring | split("T")[0]) == $d))
           ')
 
           CLOSED_CONSTRUCTED_LINES=$(echo "$TODAY_REALIZED" | jq -r \
