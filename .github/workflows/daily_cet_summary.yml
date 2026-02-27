@@ -20,8 +20,8 @@ jobs:
         run: |
           # TODAY=$(date +"%Y-%m-%d")
           # PRETTY=$(date +"%b %d, %Y")
-          TODAY="2026-02-26"
-          PRETTY="Feb 26, 2026"
+          TODAY=$(date -d "yesterday" +"%Y-%m-%d")
+          PRETTY=$(date -d "yesterday" +"%b %d, %Y")
           echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
