@@ -43,6 +43,15 @@ jobs:
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=999999" \
             -o tmp/realized.json
 
+            - name: Debug trades data
+            run: |
+            echo "Total trades:"
+            jq length tmp/trades.json || jq '.items | length' tmp/trades.json
+
+            echo "Recent trades:"
+            jq '.[] | {ticker, open_date, close_date}' tmp/trades.json | head -20 || \
+            jq '.items[] | {ticker, open_date, close_date}' tmp/trades.json | head -20
+
       - name: Build daily metrics & lists
         id: build
         run: |
