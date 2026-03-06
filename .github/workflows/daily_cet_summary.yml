@@ -58,6 +58,7 @@ jobs:
       - name: Build daily metrics & lists
         id: build
         run: |
+          set -e
           USER_EMAIL="retirehustler@gmail.com"
 
           normalize () {
@@ -91,7 +92,14 @@ jobs:
             --argjson mids "$MASTER_IDS" \
             'map(select(.master_trade_id as $mid | $mids | index($mid)))'
             )
-
+          # Filter REALIZED trades inside Prague time window
+          TODAY_REALIZED=$(echo "$REALIZED" | jq \
+            --arg start "${{ steps.dates.outputs.start }}" \
+            --arg end "${{ steps.dates.outputs.end }}" '
+            map(select(
+            (.realization_date >= $start) and (.realization_date < $end)
+            ))
+            ')
           ########################################
           # SIMPLE CLOSED TRADES (UNCHANGED)
           ########################################
