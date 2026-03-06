@@ -15,15 +15,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get today's date (CET/CEST)
+      - name: Get Prague date
         id: dates
-        run: |
-          TODAY=$(date -d "yesterday" +"%Y-%m-%d")
-          PRETTY=$(date -d "yesterday" +"%b %d, %Y")
-          echo "today=$TODAY" >> $GITHUB_OUTPUT
-          echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
+      run: |
+        TODAY=$(TZ="Europe/Prague" date +"%Y-%m-%d")
+        PRETTY=$(TZ="Europe/Prague" date +"%b %d, %Y")
+        echo "today=$TODAY" >> $GITHUB_OUTPUT
+        echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
-      - name: Fetch data from Base44
+        - name: Fetch data from Base44
         run: |
           mkdir -p tmp
 
