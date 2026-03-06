@@ -17,14 +17,14 @@ jobs:
 
       - name: Get Prague date
         id: dates
-      run: |
-        TODAY=$(TZ="Europe/Prague" date +"%Y-%m-%d")
-        PRETTY=$(TZ="Europe/Prague" date +"%b %d, %Y")
-        echo "today=$TODAY" >> $GITHUB_OUTPUT
-        echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
-
-        - name: Fetch data from Base44
         run: |
+          TODAY=$(TZ="Europe/Prague" date +"%Y-%m-%d")
+          PRETTY=$(TZ="Europe/Prague" date +"%b %d, %Y")
+          echo "today=$TODAY" >> $GITHUB_OUTPUT
+          echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
+
+          - name: Fetch data from Base44
+          run: |
           mkdir -p tmp
 
           curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
