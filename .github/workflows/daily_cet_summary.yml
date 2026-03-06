@@ -23,26 +23,26 @@ jobs:
           echo "today=$TODAY" >> $GITHUB_OUTPUT
           echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
-          - name: Fetch data from Base44
-          run: |
+      - name: Fetch data from Base44
+        run: |
           mkdir -p tmp
 
-          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=999999" \
-            -o tmp/trades.json
+            curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+          "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/Trade?limit=999999" \
+          -o tmp/trades.json
 
-          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/MasterTrade?limit=999999" \
-            -o tmp/master.json
+            curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+          "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/MasterTrade?limit=999999" \
+          -o tmp/master.json
 
-          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
-            "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/TradeLeg?limit=999999" \
-            -o tmp/legs.json
+            curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+          "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/TradeLeg?limit=999999" \
+          -o tmp/legs.json
 
-          curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
+            curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=999999" \
             -o tmp/realized.json
-
+        
       - name: Debug trades data
         run: |
           echo "Total trades:"
