@@ -15,12 +15,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get Prague date
+      - name: Build Prague trading window
         id: dates
         run: |
-          TODAY=$(TZ="Europe/Prague" date +"%Y-%m-%d")
-          PRETTY=$(TZ="Europe/Prague" date +"%b %d, %Y")
-          echo "today=$TODAY" >> $GITHUB_OUTPUT
+          START=$(TZ="Europe/Prague" date -d "yesterday 00:00" +"%Y-%m-%dT%H:%M:%S")
+          END=$(TZ="Europe/Prague" date -d "today 00:00" +"%Y-%m-%dT%H:%M:%S")
+          PRETTY=$(TZ="Europe/Prague" date -d "yesterday" +"%b %d, %Y")
+
+          echo "start=$START" >> $GITHUB_OUTPUT
+          echo "end=$END" >> $GITHUB_OUTPUT
           echo "pretty=$PRETTY" >> $GITHUB_OUTPUT
 
       - name: Fetch data from Base44
@@ -55,7 +58,6 @@ jobs:
       - name: Build daily metrics & lists
         id: build
         run: |
-          TODAY='${{ steps.dates.outputs.today }}'
           USER_EMAIL="retirehustler@gmail.com"
 
           normalize () {
@@ -85,17 +87,24 @@ jobs:
           )
 
           # Filter REALIZED to only your master trades
-          REALIZED=$(echo "$REALIZED_ALL" | jq \
-          --argjson mids "$MASTER_IDS" \
-          'map(select(.master_trade_id as $mid | $mids | index($mid)))'
-          )
+          TODAY_REALIZED=$(echo "$REALIZED" | jq \
+            --arg start "${{ steps.dates.outputs.start }}" \
+            --arg end "${{ steps.dates.outputs.end }}" '
+            map(select(
+            (.realization_date >= $start) and (.realization_date < $end)
+            ))
+            ')
 
           ########################################
           # SIMPLE CLOSED TRADES (UNCHANGED)
           ########################################
-          CLOSED_JSON=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-            map(select((.close_date | tostring | split("T")[0]) == $d))
-          ')
+          CLOSED_JSON=$(echo "$ITEMS" | jq \
+            --arg start "${{ steps.dates.outputs.start }}" \
+            --arg end "${{ steps.dates.outputs.end }}" '
+            map(select(
+            (.close_date >= $start) and (.close_date < $end)
+            ))
+            ')
 
           CLOSED_SIMPLE_LINES=$(echo "$CLOSED_JSON" | jq -r '
           .[]
@@ -140,8 +149,12 @@ jobs:
           ########################################
           # SIMPLE OPEN TRADES (UNCHANGED)
           ########################################
-          OPEN_SIMPLE_LINES=$(echo "$ITEMS" | jq --arg d "$TODAY" '
-          map(select((.open_date | tostring | split("T")[0]) == $d))
+          OPEN_SIMPLE_LINES=$(echo "$ITEMS" | jq \
+            --arg start "${{ steps.dates.outputs.start }}" \
+            --arg end "${{ steps.dates.outputs.end }}" '
+            map(select(
+            (.open_date >= $start) and (.open_date < $end)
+            ))
           | .[]
           | (if .direction=="BUY" then "Buy to Open" else "Sell to Open" end) as $action
           | (.quantity|tostring) as $qty
@@ -160,9 +173,11 @@ jobs:
           ########################################
           # CONSTRUCTED OPEN TRADES (UPDATED)
           ########################################
-          OPEN_CONSTRUCTED_LINES=$(echo "$MASTER" | jq --arg d "$TODAY" \
+          OPEN_CONSTRUCTED_LINES=$(echo "$MASTER" | jq \
+            --arg start "${{ steps.dates.outputs.start }}" \
+            --arg end "${{ steps.dates.outputs.end }}" \
             --argjson legs "$LEGS" '
-            map(select((.open_date | tostring | split("T")[0]) == $d))
+            map(select((.open_date >= $start) and (.open_date < $end)))
             | .[]
             | . as $m
             | ($legs | map(select(.master_id == $m.id))) as $legs_for_master
