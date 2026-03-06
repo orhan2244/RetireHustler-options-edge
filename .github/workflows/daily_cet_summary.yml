@@ -97,7 +97,7 @@ jobs:
             --arg start "${{ steps.dates.outputs.start }}" \
             --arg end "${{ steps.dates.outputs.end }}" '
             map(select(
-            (.realization_date >= $start) and (.realization_date < $end)
+            (.realization_date | split("T")[0]) == ($start | split("T")[0])
             ))
             ')
           ########################################
@@ -107,7 +107,7 @@ jobs:
             --arg start "${{ steps.dates.outputs.start }}" \
             --arg end "${{ steps.dates.outputs.end }}" '
             map(select(
-            (.close_date >= $start) and (.close_date < $end)
+            (.close_date | split("T")[0]) == ($start | split("T")[0])
             ))
             ')
 
@@ -156,7 +156,7 @@ jobs:
             --arg start "${{ steps.dates.outputs.start }}" \
             --arg end "${{ steps.dates.outputs.end }}" '
             map(select(
-            (.open_date >= $start) and (.open_date < $end)
+            (.open_date | split("T")[0]) == ($start | split("T")[0])
             ))
           | .[]
           | (if .direction=="BUY" then "Buy to Open" else "Sell to Open" end) as $action
