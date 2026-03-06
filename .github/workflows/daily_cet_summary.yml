@@ -107,9 +107,16 @@ jobs:
             --arg start "${{ steps.dates.outputs.start }}" \
             --arg end "${{ steps.dates.outputs.end }}" '
             map(select(
-            (.close_date | split("T")[0]) == ($start | split("T")[0])
-            ))
-            ')
+            CLOSED_JSON=$(echo "$ITEMS" | jq \
+              --arg start "${{ steps.dates.outputs.start }}" '
+              map(select(
+              (.close_date // "" | tostring | sub("T.*";"") | sub(" .*";""))
+              ==
+              ($start | sub("T.*";""))
+              ))
+              ')
+              ))
+              ')
 
           CLOSED_SIMPLE_LINES=$(echo "$CLOSED_JSON" | jq -r '
           .[]
