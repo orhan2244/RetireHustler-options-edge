@@ -82,18 +82,15 @@ jobs:
 
           # Filter LEGS to only your master trades
           LEGS=$(echo "$LEGS_ALL" | jq \
-          --argjson mids "$MASTER_IDS" \
-          'map(select(.master_id as $mid | $mids | index($mid)))'
-          )
+            --argjson mids "$MASTER_IDS" \
+            'map(select(.master_id as $mid | $mids | index($mid)))'
+            )
 
           # Filter REALIZED to only your master trades
-          TODAY_REALIZED=$(echo "$REALIZED" | jq \
-            --arg start "${{ steps.dates.outputs.start }}" \
-            --arg end "${{ steps.dates.outputs.end }}" '
-            map(select(
-            (.realization_date >= $start) and (.realization_date < $end)
-            ))
-            ')
+          REALIZED=$(echo "$REALIZED_ALL" | jq \
+            --argjson mids "$MASTER_IDS" \
+            'map(select(.master_trade_id as $mid | $mids | index($mid)))'
+            )
 
           ########################################
           # SIMPLE CLOSED TRADES (UNCHANGED)
@@ -126,9 +123,7 @@ jobs:
           ########################################
           # CONSTRUCTED CLOSED LEGS (UPDATED)
           ########################################
-          TODAY_REALIZED=$(echo "$REALIZED" | jq --arg d "$TODAY" '
-          map(select((.realization_date | tostring | split("T")[0]) == $d))
-          ')
+          
 
           CLOSED_CONSTRUCTED_LINES=$(echo "$TODAY_REALIZED" | jq -r \
             --argjson legs "$LEGS" \
