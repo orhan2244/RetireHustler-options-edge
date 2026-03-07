@@ -101,22 +101,16 @@ jobs:
             ))
             ')
           ########################################
-          # SIMPLE CLOSED TRADES (UNCHANGED)
+          # SIMPLE CLOSED TRADES
           ########################################
           CLOSED_JSON=$(echo "$ITEMS" | jq \
-            --arg start "${{ steps.dates.outputs.start }}" \
-            --arg end "${{ steps.dates.outputs.end }}" '
+            --arg start "${{ steps.dates.outputs.start }}" '
             map(select(
-            CLOSED_JSON=$(echo "$ITEMS" | jq \
-              --arg start "${{ steps.dates.outputs.start }}" '
-              map(select(
-              (.close_date // "" | tostring | sub("T.*";"") | sub(" .*";""))
-              ==
-              ($start | sub("T.*";""))
-              ))
-              ')
-              ))
-              ')
+            (.close_date // "" | tostring | sub("T.*";"") | sub(" .*";""))
+            ==
+            ($start | sub("T.*";""))
+            ))
+            ')
 
           CLOSED_SIMPLE_LINES=$(echo "$CLOSED_JSON" | jq -r '
           .[]
@@ -187,7 +181,11 @@ jobs:
             --arg start "${{ steps.dates.outputs.start }}" \
             --arg end "${{ steps.dates.outputs.end }}" \
             --argjson legs "$LEGS" '
-            map(select((.open_date >= $start) and (.open_date < $end)))
+            map(select(
+              (.open_date // "" | tostring | sub("T.*";"") | sub(" .*";""))
+              ==
+              ($start | sub("T.*";""))
+              ))
             | .[]
             | . as $m
             | ($legs | map(select(.master_id == $m.id))) as $legs_for_master
