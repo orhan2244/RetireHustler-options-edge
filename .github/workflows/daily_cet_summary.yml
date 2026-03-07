@@ -49,12 +49,25 @@ jobs:
           
       - name: Debug trades data
         run: |
-          echo "Total trades:"
-          jq length tmp/trades.json || jq '.items | length' tmp/trades.json
+          normalize () {
+            FILE=$1
+            if jq -e 'type=="array"' "$FILE" >/dev/null; then cat "$FILE"; else jq -c '.items // []' "$FILE"; fi
+          }
 
-          echo "Recent trades:"
-          jq '.[] | {ticker, open_date, close_date}' tmp/trades.json | head -20 || \
-          jq '.items[] | {ticker, open_date, close_date}' tmp/trades.json | head -20
+          echo "=== RAW STRUCTURE of first record ==="
+          jq '.[0]' tmp/trades.json || jq '.items[0]' tmp/trades.json
+
+          echo "=== Total records ==="
+          jq 'length' tmp/trades.json || jq '.items | length' tmp/trades.json
+
+          echo "=== Sample created_by values ==="
+          normalize tmp/trades.json | jq '[.[].created_by] | unique'
+
+          echo "=== Your trades count ==="
+          normalize tmp/trades.json | jq '[.[] | select(.created_by == "retirehustler@gmail.com")] | length'
+
+          echo "=== START date value ==="
+          echo "${{ steps.dates.outputs.start }}"
 
       - name: Build daily metrics & lists
         id: build
