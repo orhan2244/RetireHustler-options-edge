@@ -45,7 +45,8 @@ jobs:
             curl -s -H "api_key: ${{ secrets.BASE44_API_KEY }}" \
             "https://app.base44.com/api/apps/6921d8e3ab33f86e081375a1/entities/RealizedLegProfit?limit=999999" \
             -o tmp/realized.json
-        
+           
+          
       - name: Debug trades data
         run: |
           echo "Total trades:"
@@ -70,13 +71,13 @@ jobs:
             fi
           }
 
-          ITEMS=$(normalize tmp/trades.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
+          ITEMS=$(normalize tmp/trades.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'")) | map(. + .data)')
 
-          MASTER=$(normalize tmp/master.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'"))')
+          MASTER=$(normalize tmp/master.json | jq 'map(select(.created_by == "'"$USER_EMAIL"'")) | map(. + .data)')
 
           # Load all legs and realized first
-          LEGS_ALL=$(normalize tmp/legs.json)
-          REALIZED_ALL=$(normalize tmp/realized.json)    
+          LEGS_ALL=$(normalize tmp/legs.json | jq 'map(. + .data)')
+          REALIZED_ALL=$(normalize tmp/realized.json | jq 'map(. + .data)')  
 
           # Extract allowed master IDs
           MASTER_IDS=$(echo "$MASTER" | jq '[.[].id]')
