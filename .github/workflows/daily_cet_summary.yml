@@ -2,7 +2,7 @@ name: Daily CET Trading Summary to Discord
 
 on:
   schedule:
-    - cron: '5 21 * * 1-5'
+    - cron: '15 21 * * 1-5'
   workflow_dispatch: {}
 
 jobs:
@@ -18,9 +18,9 @@ jobs:
       - name: Build Prague trading window
         id: dates
         run: |
-          START=$(TZ="Europe/Prague" date -d "yesterday 00:00" +"%Y-%m-%dT%H:%M:%S")
-          END=$(TZ="Europe/Prague" date -d "today 00:00" +"%Y-%m-%dT%H:%M:%S")
-          PRETTY=$(TZ="Europe/Prague" date -d "yesterday" +"%b %d, %Y")
+          START=$(TZ="America/New_York" date +"%Y-%m-%dT00:00:00")
+          END=$(TZ="America/New_York" date +"%Y-%m-%dT23:59:59")        
+          PRETTY=$(TZ="America/New_York" date +"%b %d, %Y")
 
           echo "start=$START" >> $GITHUB_OUTPUT
           echo "end=$END" >> $GITHUB_OUTPUT
@@ -227,7 +227,12 @@ jobs:
           PL_CONSTRUCTED=$(echo "$TODAY_REALIZED" | jq '[.[].realized_pl // 0] | add // 0')
 
           DAILY_PL=$(jq -n '
-            ($a + $b) | (. * 100 | round) / 100 | "$" + tostring
+           ($a + $b)
+            | (. * 100 | round) / 100
+            | if . >= 0
+                then "$" + (tostring)
+                else "-$" + ((.|abs)|tostring)
+            end
           ' --argjson a "$PL_SIMPLE" --argjson b "$PL_CONSTRUCTED")
 
           echo "daily_pl=$DAILY_PL" >> $GITHUB_OUTPUT
